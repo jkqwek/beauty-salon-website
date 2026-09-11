@@ -10,10 +10,10 @@ import path from "node:path"
  * so the build does not depend on that file being present in the export.
  */
 const siteConfiguration: FigmaSiteConfiguration = {
-  title: "Allure Beauty Salon",
+  title: "Allure — салон красоты",
   description:
-    "Luxury beauty salon: hair styling, nail care, skincare and massage. Book your appointment online.",
-  language: "en",
+    "Салон красоты Allure: стрижки и окрашивание, маникюр, уход за лицом и массаж. Онлайн-запись.",
+  language: "ru",
   robots: { index: true },
   accessibility: { addBypassLinks: true },
 }
@@ -259,7 +259,7 @@ function figmaSiteConfiguration(config: FigmaSiteConfiguration): Plugin {
             {
               tag: "a",
               attrs: { class: "figma-bypass-link", href: "#root" },
-              children: "Skip to content",
+              children: "Перейти к содержимому",
               injectTo: "body-prepend",
             },
           )

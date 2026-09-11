@@ -7,10 +7,7 @@ import {
 import { Sparkles, Calendar, User, Menu, X } from "lucide-react"
 import { useState } from "react"
 import { HomePage } from "./pages/HomePage"
-import { ServicesPage } from "./pages/ServicesPage"
 import { MastersPage } from "./pages/MastersPage"
-import { ProfilePage } from "./pages/ProfilePage"
-import { BookingWizard } from "./components/BookingWizard"
 
 function Layout() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
@@ -38,7 +35,7 @@ function Layout() {
                 }`
               }
             >
-              Home
+              Главная
             </NavLink>
             <NavLink
               to="/services"
@@ -48,7 +45,7 @@ function Layout() {
                 }`
               }
             >
-              Services
+              Услуги
             </NavLink>
             <NavLink
               to="/masters"
@@ -58,7 +55,7 @@ function Layout() {
                 }`
               }
             >
-              Masters
+              Мастера
             </NavLink>
           </nav>
 
@@ -73,7 +70,7 @@ function Layout() {
               onClick={() => setBookingOpen(true)}
               className="bg-gold hover:bg-gold-hover text-white px-6 py-2.5 rounded-full text-sm font-medium transition-all shadow-sm hover:shadow-md"
             >
-              Book Now
+              Записаться
             </button>
           </div>
 
@@ -97,28 +94,28 @@ function Layout() {
               onClick={() => setMobileMenuOpen(false)}
               className="text-lg font-medium text-foreground"
             >
-              Home
+              Главная
             </NavLink>
             <NavLink
               to="/services"
               onClick={() => setMobileMenuOpen(false)}
               className="text-lg font-medium text-foreground"
             >
-              Services
+              Услуги
             </NavLink>
             <NavLink
               to="/masters"
               onClick={() => setMobileMenuOpen(false)}
               className="text-lg font-medium text-foreground"
             >
-              Masters
+              Мастера
             </NavLink>
             <NavLink
               to="/profile"
               onClick={() => setMobileMenuOpen(false)}
               className="text-lg font-medium text-foreground"
             >
-              Profile
+              Профиль
             </NavLink>
             <button
               onClick={() => {
@@ -127,7 +124,7 @@ function Layout() {
               }}
               className="bg-gold text-white px-6 py-3 rounded-full text-center font-medium mt-4"
             >
-              Book Now
+              Записаться
             </button>
           </div>
         )}
@@ -145,14 +142,14 @@ function Layout() {
             Allure
           </div>
           <p className="text-muted-foreground text-sm text-center md:text-left">
-            © 2026 Allure Beauty Salon. All rights reserved.
+            © 2026 Allure Beauty Salon. Все права защищены.
           </p>
           <div className="flex gap-4">
             <span className="text-sm text-muted-foreground hover:text-gold cursor-pointer transition-colors">
-              Instagram
+              ВКонтакте
             </span>
             <span className="text-sm text-muted-foreground hover:text-gold cursor-pointer transition-colors">
-              Facebook
+              Telegram
             </span>
           </div>
         </div>
@@ -167,7 +164,6 @@ function Layout() {
       </button>
 
       {/* Booking Modal */}
-      {bookingOpen && <BookingWizard onClose={() => setBookingOpen(false)} />}
     </div>
   )
 }
@@ -178,9 +174,7 @@ const router = createBrowserRouter([
     Component: Layout,
     children: [
       { index: true, Component: HomePage },
-      { path: "services", Component: ServicesPage },
       { path: "masters", Component: MastersPage },
-      { path: "profile", Component: ProfilePage },
     ],
   },
 ])

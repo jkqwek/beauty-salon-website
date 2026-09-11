@@ -1,56 +1,61 @@
 import { useOutletContext } from "react-router"
-import detailPhoto from "@/imports/image-1.png"
+import photoRostova from "@/imports/Rostova.png"
+import photoLin from "@/imports/lin.png"
+import photoKravtsova from "@/imports/kravchova.png"
+import photoTarasov from "@/imports/tarasov.png"
+import photoVishnevskaya from "@/imports/vishnevskaya.png"
+import photoKim from "@/imports/kim.png"
 import { ImageWithFallback } from "../components/ImageWithFallback"
 import { Star } from "lucide-react"
 
 const MASTERS = [
   {
     id: 1,
-    name: "Elena Rostova",
-    role: "Senior Stylist & Colorist",
+    name: "Елена Ростова",
+    role: "Ведущий стилист-колорист",
     rating: 5.0,
-    quote: "Every client is a canvas, and color is my favorite medium.",
-    image: detailPhoto,
+    quote: "Каждый клиент — холст, а цвет — мой любимый материал.",
+    image: photoRostova,
   },
   {
     id: 2,
-    name: "Sophia Lin",
-    role: "Lead Esthetician",
+    name: "София Лин",
+    role: "Главный косметолог",
     rating: 4.9,
-    quote: "Glowing skin starts with deep care and relaxation.",
-    image: detailPhoto,
+    quote: "Сияющая кожа начинается с глубокого ухода и расслабления.",
+    image: photoLin,
   },
   {
     id: 3,
-    name: "Isabella Cruz",
-    role: "Nail Art Specialist",
+    name: "Злата Кравцова",
+    role: "Мастер нейл-арта",
     rating: 4.9,
-    quote: "Details make perfection, and perfection is not a detail.",
-    image: detailPhoto,
+    quote: "Детали создают совершенство, а совершенство — не деталь.",
+    image: photoKravtsova,
   },
   {
     id: 4,
-    name: "Marcus Thorne",
-    role: "Massage Therapist",
+    name: "Богдан Тарасов",
+    role: "Массажист",
     rating: 5.0,
-    quote: "Healing the body through intentional touch and energy.",
-    image: detailPhoto,
+    quote: "Исцеление тела через осознанное прикосновение и энергию.",
+    image: photoTarasov,
   },
   {
     id: 5,
-    name: "Chloe Vane",
-    role: "Makeup Artist",
+    name: "Дарина Вишневская",
+    role: "Визажист",
     rating: 4.8,
-    quote: "Enhancing your natural beauty for every occasion.",
-    image: detailPhoto,
+    quote: "Подчёркиваю вашу естественную красоту для любого повода.",
+    image: photoVishnevskaya,
   },
   {
     id: 6,
-    name: "David Kim",
-    role: "Hair Stylist",
+    name: "Дэвид Ким",
+    role: "Парикмахер-стилист",
     rating: 4.9,
-    quote: "A great cut can change your whole perspective.",
-    image: detailPhoto,
+    quote: "Хорошая стрижка меняет взгляд на себя.",
+    image: photoKim,
   },
 ]
 
@@ -62,11 +67,11 @@ export function MastersPage() {
       {/* Header */}
       <div className="bg-rose-50 border-b border-rose-100 py-16 px-6 text-center">
         <h1 className="text-4xl md:text-5xl font-serif text-foreground mb-4">
-          Meet the Masters
+          Наши мастера
         </h1>
         <p className="text-muted-foreground max-w-2xl mx-auto">
-          Our hand-picked team of experts brings passion, precision, and
-          artistry to every appointment.
+          Команда отобранных вручную экспертов привносит страсть, точность и
+          артистизм в каждую процедуру.
         </p>
       </div>
 
@@ -108,7 +113,7 @@ export function MastersPage() {
                 onClick={openBooking}
                 className="w-full border-2 border-gold text-gold font-medium hover:bg-gold hover:text-white px-6 py-3 rounded-full transition-colors"
               >
-                View Profile / Book
+                Профиль / Записаться
               </button>
             </div>
           ))}

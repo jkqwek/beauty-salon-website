@@ -19,8 +19,7 @@ from django.utils import timezone
 from celery import shared_task
 
 from telegram_bot.notify import notify_client_reminder
-
-# from appointments.models import Appointment  # раскомментировать, когда модель готова
+from bookings.models import Booking
 
 
 @shared_task
@@ -28,24 +27,20 @@ def send_daily_reminders():
     """Находит записи на завтра и рассылает напоминания клиентам с привязанным chat_id."""
     tomorrow = timezone.now().date() + timedelta(days=1)
 
-    # Пример логики — адаптируйте под реальные поля модели Appointment
-    #
-    # appointments = Appointment.objects.filter(
-    #     date=tomorrow,
-    #     status="confirmed",
-    #     client__telegram_chat_id__isnull=False,
-    # ).select_related("client", "service")
-    #
-    # sent_count = 0
-    # for appointment in appointments:
-    #     success = notify_client_reminder(
-    #         client_chat_id=appointment.client.telegram_chat_id,
-    #         service_name=appointment.service.name,
-    #         date_time=f"{appointment.date} {appointment.time}",
-    #     )
-    #     if success:
-    #         sent_count += 1
-    #
-    # return f"Отправлено напоминаний: {sent_count}"
+    bookings = Booking.objects.filter(
+        date=tomorrow,
+        status="active",
+        client__telegram_profile__telegram_chat_id__isnull=False,
+    ).select_related("client", "service", "client__telegram_profile")
 
-    return "TODO: раскомментировать логику, когда модель Appointment будет готова"
+    sent_count = 0
+    for booking in bookings:
+        success = notify_client_reminder(
+            client_chat_id=booking.client.telegram_profile.telegram_chat_id,
+            service_name=booking.service.name,
+            date_time=f"{booking.date} {booking.start_time}",
+        )
+        if success:
+            sent_count += 1
+
+    return f"Отправлено напоминаний: {sent_count}"

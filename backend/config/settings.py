@@ -40,6 +40,9 @@ INSTALLED_APPS = [
 
     "rest_framework",
     "catalog",
+    "bookings.apps.BookingsConfig",
+    "django_celery_beat",
+    "telegram_bot",
 ]
 
 MIDDLEWARE = [
@@ -126,5 +129,25 @@ STATIC_URL = 'static/'
 MAILERS = {
     'default': {
         'BACKEND': 'django.core.mail.backends.console.EmailBackend',
+    },
+}
+
+import os
+from celery.schedules import crontab
+from dotenv import load_dotenv
+
+load_dotenv(BASE_DIR / ".env")
+
+REDIS_URL = os.getenv("REDIS_URL")
+
+CELERY_BROKER_URL = REDIS_URL
+CELERY_RESULT_BACKEND = REDIS_URL
+CELERY_BROKER_USE_SSL = {"ssl_cert_reqs": "none"}
+CELERY_REDIS_BACKEND_USE_SSL = {"ssl_cert_reqs": "none"}
+
+CELERY_BEAT_SCHEDULE = {
+    "send-daily-reminders": {
+        "task": "telegram_bot.tasks.send_daily_reminders",
+        "schedule": crontab(hour=18, minute=0),
     },
 }

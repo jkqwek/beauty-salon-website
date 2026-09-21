@@ -8,6 +8,9 @@ import { Sparkles, Calendar, User, Menu, X } from "lucide-react"
 import { useState } from "react"
 import { HomePage } from "./pages/HomePage"
 import { MastersPage } from "./pages/MastersPage"
+import { ServicesPage } from "./pages/ServicesPage"
+import { ProfilePage } from "./pages/ProfilePage"
+import { BookingWizard } from "./components/BookingWizard"
 
 function Layout() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
@@ -164,6 +167,7 @@ function Layout() {
       </button>
 
       {/* Booking Modal */}
+      {bookingOpen && <BookingWizard onClose={() => setBookingOpen(false)} />}
     </div>
   )
 }
@@ -174,7 +178,9 @@ const router = createBrowserRouter([
     Component: Layout,
     children: [
       { index: true, Component: HomePage },
+      { path: "services", Component: ServicesPage },
       { path: "masters", Component: MastersPage },
+      { path: "profile", Component: ProfilePage },
     ],
   },
 ])

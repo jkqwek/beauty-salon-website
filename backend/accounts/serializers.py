@@ -6,12 +6,19 @@ User = get_user_model()
 
 
 class RegisterSerializer(serializers.ModelSerializer):
+    email = serializers.EmailField()  # обязательный (у модели User он необязательный)
     password = serializers.CharField(write_only=True, validators=[validate_password])
     password2 = serializers.CharField(write_only=True)
 
     class Meta:
         model = User
         fields = ("username", "email", "password", "password2")
+
+    def validate_email(self, value):
+        value = value.strip().lower()
+        if User.objects.filter(email__iexact=value).exists():
+            raise serializers.ValidationError("Пользователь с таким email уже зарегистрирован.")
+        return value
 
     def validate(self, attrs):
         if attrs["password"] != attrs["password2"]:

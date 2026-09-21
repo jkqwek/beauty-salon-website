@@ -9,6 +9,7 @@ import { useState } from "react"
 import { HomePage } from "./pages/HomePage"
 import { MastersPage } from "./pages/MastersPage"
 import { ServicesPage } from "./pages/ServicesPage"
+import { ProfilePage } from "./pages/ProfilePage"
 import { BookingWizard } from "./components/BookingWizard"
 
 function Layout() {
@@ -179,6 +180,7 @@ const router = createBrowserRouter([
       { index: true, Component: HomePage },
       { path: "services", Component: ServicesPage },
       { path: "masters", Component: MastersPage },
+      { path: "profile", Component: ProfilePage },
     ],
   },
 ])

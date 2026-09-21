@@ -41,6 +41,7 @@ INSTALLED_APPS = [
     "rest_framework",
     "catalog",
     "bookings",
+    "accounts",
 ]
 
 MIDDLEWARE = [
@@ -128,4 +129,11 @@ MAILERS = {
     'default': {
         'BACKEND': 'django.core.mail.backends.console.EmailBackend',
     },
+}
+
+REST_FRAMEWORK = {
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "rest_framework_simplejwt.authentication.JWTAuthentication",
+        "rest_framework.authentication.SessionAuthentication",
+    ],
 }

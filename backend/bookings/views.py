@@ -141,3 +141,95 @@ def booking_history(request):
     bookings = Booking.objects.filter(client=request.user)
     serializer = BookingSerializer(bookings, many=True)
     return Response(serializer.data)
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def cancel_booking(request, booking_id):
+    try:
+        booking = Booking.objects.get(id=booking_id)
+    except Booking.DoesNotExist:
+        return Response({"error": "Запись не найдена"}, status=status.HTTP_404_NOT_FOUND)
+
+    if booking.client != request.user:
+        return Response(
+            {"error": "Нельзя отменить чужую запись"},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    if booking.status != "active":
+        return Response(
+            {"error": "Эту запись уже нельзя отменить (она не активна)"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    booking.status = "cancelled"
+    booking.save()
+
+    serializer = BookingSerializer(booking)
+    return Response(serializer.data)
+
+@api_view(["POST", "PATCH"])
+@permission_classes([IsAuthenticated])
+def reschedule_booking(request, booking_id):
+    try:
+        booking = Booking.objects.get(id=booking_id)
+    except Booking.DoesNotExist:
+        return Response({"error": "Запись не найдена"}, status=status.HTTP_404_NOT_FOUND)
+
+    if booking.client != request.user:
+        return Response(
+            {"error": "Нельзя перенести чужую запись"},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    if booking.status != "active":
+        return Response(
+            {"error": "Эту запись уже нельзя перенести (она не активна)"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    new_date_str = request.data.get("date")
+    new_start_time_str = request.data.get("start_time")
+
+    if not all([new_date_str, new_start_time_str]):
+        return Response(
+            {"error": "Нужно передать date и start_time"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        new_date = datetime.strptime(new_date_str, "%Y-%m-%d").date()
+        new_start_time = datetime.strptime(new_start_time_str, "%H:%M").time()
+    except ValueError:
+        return Response(
+            {"error": "Неверный формат даты или времени"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # пересчитываем время окончания по длительности услуги
+    new_start_dt = datetime.combine(new_date, new_start_time)
+    new_end_dt = new_start_dt + timedelta(minutes=booking.service.duration_minutes)
+    new_end_time = new_end_dt.time()
+
+    # повторная проверка занятости — исключаем саму эту запись, иначе конфликт сама с собой
+    existing_bookings = Booking.objects.filter(
+        employee=booking.employee, date=new_date, status="active"
+    ).exclude(id=booking.id)
+
+    for other in existing_bookings:
+        other_start = datetime.combine(new_date, other.start_time)
+        other_end = datetime.combine(new_date, other.end_time)
+        if new_start_dt < other_end and other_start < new_end_dt:
+            return Response(
+                {"error": "Это время уже занято, выберите другой слот"},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+    booking.date = new_date
+    booking.start_time = new_start_time
+    booking.end_time = new_end_time
+    booking.save()
+
+    serializer = BookingSerializer(booking)
+    return Response(serializer.data)

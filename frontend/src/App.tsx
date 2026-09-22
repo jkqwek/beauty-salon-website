@@ -14,6 +14,7 @@ import { BookingWizard } from "./components/BookingWizard"
 import { AuthModal } from "./components/AuthModal"
 import { RouteError } from "./components/RouteError"
 import { AuthProvider, useAuth } from "./auth/AuthContext"
+import { DashboardPage } from "./pages/DashboardPage"
 
 function Layout() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
@@ -75,6 +76,18 @@ function Layout() {
             >
               Мастера
             </NavLink>
+            {user?.is_staff && (
+              <NavLink
+                to="/dashboard"
+                className={({ isActive }) =>
+                  `text-sm font-medium transition-colors hover:text-gold ${
+                    isActive ? "text-gold" : "text-muted-foreground"
+                  }`
+                }
+              >
+                Дашборд
+              </NavLink>
+            )}
           </nav>
 
           <div className="hidden md:flex items-center gap-4">
@@ -153,6 +166,15 @@ function Layout() {
             >
               Профиль
             </NavLink>
+            {user?.is_staff && (
+              <NavLink
+                to="/dashboard"
+                onClick={() => setMobileMenuOpen(false)}
+                className="text-lg font-medium text-foreground"
+              >
+                Дашборд
+              </NavLink>
+            )}
             {user ? (
               <button
                 onClick={() => {
@@ -253,6 +275,7 @@ const router = createBrowserRouter([
       { path: "services", Component: ServicesPage },
       { path: "masters", Component: MastersPage },
       { path: "profile", Component: ProfilePage },
+      { path: "dashboard", Component: DashboardPage },
     ],
   },
 ])

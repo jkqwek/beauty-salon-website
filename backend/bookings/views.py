@@ -12,6 +12,8 @@ from catalog.models import Service
 from .models import Schedule, Booking
 from .serializers import BookingCreateSerializer, BookingSerializer
 from .services import get_free_slots
+from django.db.models import Count, F
+from catalog.permissions import IsAdminUser
 
 
 def _int_param(params, name):
@@ -152,3 +154,23 @@ def reschedule_booking(request, booking_id):
 
     serializer = BookingSerializer(booking)
     return Response(serializer.data)
+
+@api_view(["GET"])
+@permission_classes([IsAdminUser])
+def popular_services_report(request):
+    rows = (
+        Booking.objects.filter(status__in=["active", "completed"])
+        .values("service_id", "service__name")
+        .annotate(bookings_count=Count("id"))
+        .annotate(revenue=F("bookings_count") * F("service__price"))
+        .order_by("-bookings_count")
+    )
+    return Response([
+        {
+            "service_id": r["service_id"],
+            "service_name": r["service__name"],
+            "bookings_count": r["bookings_count"],
+            "revenue": str(r["revenue"]),
+        }
+        for r in rows
+    ])

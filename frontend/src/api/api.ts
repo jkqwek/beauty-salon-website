@@ -76,3 +76,14 @@ export const bookingApi = {
     api<Booking>("/bookings/", { method: "POST", body: data }),
   my: () => api<Booking[]>("/bookings/my/"),
 }
+
+export interface PopularServiceRow {
+  service_id: number
+  service_name: string
+  bookings_count: number
+  revenue: string
+}
+
+export const reportsApi = {
+  popularServices: () => api<PopularServiceRow[]>("/bookings/reports/popular-services/"),
+}

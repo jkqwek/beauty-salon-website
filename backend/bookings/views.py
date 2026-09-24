@@ -174,3 +174,14 @@ def popular_services_report(request):
         }
         for r in rows
     ])
+
+@api_view(["GET"])
+@permission_classes([IsAdminUser])
+def new_bookings_since(request):
+    after_id = request.query_params.get("after_id")
+    after_id = int(after_id) if after_id and after_id.isdigit() else 0
+    new_ones = Booking.objects.filter(id__gt=after_id, status="active").order_by("id")
+    return Response({
+        "latest_id": new_ones.last().id if new_ones.exists() else after_id,
+        "count": new_ones.count(),
+    })

@@ -6,6 +6,7 @@ from .views import (
     cancel_booking,
     reschedule_booking,
     popular_services_report,
+    new_bookings_since,
 )
 
 urlpatterns = [
@@ -15,4 +16,5 @@ urlpatterns = [
     path("<int:booking_id>/cancel/", cancel_booking, name="cancel-booking"),
     path("<int:booking_id>/reschedule/", reschedule_booking, name="reschedule-booking"),
     path("reports/popular-services/", popular_services_report, name="popular-services-report"),
+    path("new-since/", new_bookings_since, name="new-bookings-since"),
 ]

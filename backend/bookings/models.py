@@ -55,3 +55,18 @@ class Booking(models.Model):
     
     def __str__(self):
         return f"{self.client} → {self.employee} ({self.date} {self.start_time})"
+
+
+class TimeOff(models.Model):
+    """Ручная блокировка времени у мастера: обед, перерыв, отгул."""
+    employee = models.ForeignKey("catalog.Employee", on_delete=models.CASCADE, related_name="time_offs")
+    date = models.DateField()
+    start_time = models.TimeField()
+    end_time = models.TimeField()
+    reason = models.CharField(max_length=200, blank=True)
+
+    class Meta:
+        ordering = ["date", "start_time"]
+
+    def __str__(self):
+        return f"{self.employee} — {self.date} {self.start_time}-{self.end_time}"

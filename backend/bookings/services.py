@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 
 from django.utils import timezone
 
-from .models import Booking, Schedule
+from .models import Booking, Schedule, TimeOff
 
 SLOT_STEP = timedelta(minutes=15)
 MAX_DAYS_AHEAD = 90  # на сколько дней вперёд можно записаться
@@ -22,6 +22,9 @@ def get_free_slots(employee_id, service, target_date):
         for b in Booking.objects.filter(
             employee_id=employee_id, date=target_date, status="active"
         )
+    ] + [
+        (datetime.combine(target_date, t.start_time), datetime.combine(target_date, t.end_time))
+        for t in TimeOff.objects.filter(employee_id=employee_id, date=target_date)
     ]
 
     now = timezone.localtime().replace(tzinfo=None)

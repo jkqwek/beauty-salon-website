@@ -15,6 +15,7 @@ import { AuthModal } from "./components/AuthModal"
 import { RouteError } from "./components/RouteError"
 import { AuthProvider, useAuth } from "./auth/AuthContext"
 import { DashboardPage } from "./pages/DashboardPage"
+import { FinancePage } from "./pages/FinancePage"
 
 function Layout() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
@@ -276,6 +277,7 @@ const router = createBrowserRouter([
       { path: "masters", Component: MastersPage },
       { path: "profile", Component: ProfilePage },
       { path: "dashboard", Component: DashboardPage },
+      { path: "finance", Component: FinancePage },
     ],
   },
 ])

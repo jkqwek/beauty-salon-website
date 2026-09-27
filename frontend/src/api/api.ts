@@ -87,3 +87,62 @@ export interface PopularServiceRow {
 export const reportsApi = {
   popularServices: () => api<PopularServiceRow[]>("/bookings/reports/popular-services/"),
 }
+
+export interface Expense {
+  id: number
+  category: string
+  amount: string
+  date: string
+  description: string
+  created_at: string
+}
+
+export interface RevenueReportRow {
+  period: string
+  revenue: string
+  expenses: string
+  profit: string
+}
+
+export interface EmployeeWorkloadRow {
+  employee_id: number
+  employee_name: string
+  bookings_count: number
+  total_hours: number
+  total_revenue: string
+}
+
+export interface IncomeSummary {
+  total_income: string
+  bookings_count: number
+}
+
+interface DateRangeParams {
+  date_from?: string
+  date_to?: string
+}
+
+function toQueryString(params:object) {
+  const entries = Object.entries(params).filter(([, v]) => v !== undefined) as [string, string][]
+  const qs = new URLSearchParams(entries).toString()
+  return qs ? `?${qs}` : ""
+}
+
+export const financeApi = {
+  expenses: () => api<Expense[]>("/finance/expenses/"),
+  createExpense: (data: Omit<Expense, "id" | "created_at">) =>
+    api<Expense>("/finance/expenses/", { method: "POST", body: data }),
+  updateExpense: (id: number, data: Partial<Omit<Expense, "id" | "created_at">>) =>
+    api<Expense>(`/finance/expenses/${id}/`, { method: "PATCH", body: data }),
+  deleteExpense: (id: number) =>
+    api<void>(`/finance/expenses/${id}/`, { method: "DELETE" }),
+
+  incomeSummary: (params: DateRangeParams = {}) =>
+    api<IncomeSummary>(`/finance/imcome-summary/${toQueryString(params)}`),
+
+  revenueReport: (params: DateRangeParams & { group_by?: "day" | "week" | "month" } = {}) =>
+    api<RevenueReportRow[]>(`/finance/revenue-report/${toQueryString(params)}`),
+
+  employeeWorkload: (params: DateRangeParams = {}) =>
+    api<EmployeeWorkloadRow[]>(`/finance/employee-workload/${toQueryString(params)}`),
+}

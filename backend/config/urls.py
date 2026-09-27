@@ -18,9 +18,18 @@ from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import include, path
+from rest_framework.routers import SimpleRouter
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
-from accounts.views import RegisterView, me
+from accounts.views import AdminUserViewSet, RegisterView, me
+from bookings.views import AdminBookingViewSet, ScheduleViewSet, TimeOffViewSet, salon_load
+
+# панель управления на сайте (только сотрудники)
+admin_router = SimpleRouter()
+admin_router.register("users", AdminUserViewSet, basename="admin-users")
+admin_router.register("bookings", AdminBookingViewSet, basename="admin-bookings")
+admin_router.register("schedules", ScheduleViewSet, basename="admin-schedules")
+admin_router.register("time-offs", TimeOffViewSet, basename="admin-time-offs")
 
 urlpatterns = [
     path("admin/", admin.site.urls),
@@ -31,6 +40,8 @@ urlpatterns = [
     path("api/auth/login/", TokenObtainPairView.as_view(), name="token-obtain-pair"),
     path("api/auth/refresh/", TokenRefreshView.as_view(), name="token-refresh"),
     path("api/auth/me/", me, name="me"),
+    path("api/admin/load/", salon_load, name="salon-load"),
+    path("api/admin/", include(admin_router.urls)),
     
     path("api/finance/", include("finance.urls")),
 

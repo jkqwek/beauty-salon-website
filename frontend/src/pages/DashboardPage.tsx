@@ -1,4 +1,3 @@
-import { useAuth } from "@/auth/AuthContext"
 import { reportsApi } from "@/api/api"
 import { useApi } from "@/api/useApi"
 import { ErrorMessage } from "../components/ErrorMessage"
@@ -14,19 +13,10 @@ import {
 } from "recharts"
 
 export function DashboardPage() {
-  const { user } = useAuth()
   const { data, loading, error, reload } = useApi(reportsApi.popularServices)
 
-  if (!user?.is_staff) {
-    return (
-      <div className="flex-1 flex items-center justify-center py-24 text-muted-foreground">
-        Доступно только администраторам.
-      </div>
-    )
-  }
-
   return (
-    <div className="flex-1 bg-pearl pb-24 px-6 pt-12 max-w-5xl mx-auto w-full">
+    <div>
       <h1 className="text-3xl font-serif text-foreground mb-8">Популярные услуги</h1>
 
       {loading && <p className="text-muted-foreground">Загрузка…</p>}

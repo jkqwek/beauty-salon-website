@@ -48,6 +48,9 @@ class Booking(models.Model):
     status = models.CharField("Статус", max_length=10, choices=STATUS_CHOISES, default="active")
     created_at = models.DateTimeField(auto_now_add=True)
     price = models.DecimalField('Цена', max_digits=10, decimal_places=2, null=True, blank=True)
+    # тайм-трекинг: мастер жмёт "Начать"/"Завершить" в своём кабинете
+    actual_start = models.DateTimeField("Фактическое начало", null=True, blank=True)
+    actual_end = models.DateTimeField("Фактическое окончание", null=True, blank=True)
 
     class Meta:
         verbose_name = "Запись"
@@ -71,3 +74,18 @@ class TimeOff(models.Model):
 
     def __str__(self):
         return f"{self.employee} — {self.date} {self.start_time}-{self.end_time}"
+
+
+class CancellationPolicy(models.Model):
+    """Правило отмены: одна строка (pk=1), срок меняется в панели."""
+    deadline_hours = models.PositiveIntegerField("Отмена и перенос не позднее чем за, ч", default=24)
+
+    class Meta:
+        verbose_name = verbose_name_plural = "Правило отмены"
+
+    def __str__(self):
+        return f"Не позднее чем за {self.deadline_hours} ч"
+
+    @classmethod
+    def load(cls):
+        return cls.objects.get_or_create(pk=1)[0]

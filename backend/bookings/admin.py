@@ -2,7 +2,7 @@ import csv
 from django.contrib import admin
 from django.http import HttpResponse
 from .models import Schedule, Booking
-from .models import TimeOff
+from .models import CancellationPolicy, TimeOff
 
 @admin.register(TimeOff)
 class TimeOffAdmin(admin.ModelAdmin):
@@ -35,5 +35,14 @@ class ScheduleAdmin(admin.ModelAdmin):
 class BookingAdmin(admin.ModelAdmin):
     list_display = ("client", "employee", "service", "date", "start_time", "end_time", "status")
     list_filter = ("status", "date", "employee")
-    search_fields = ("client__username", "employee__fuul_name")
+    search_fields = ("client__username", "employee__full_name")
     actions = [export_as_csv]
+
+
+@admin.register(CancellationPolicy)
+class CancellationPolicyAdmin(admin.ModelAdmin):
+    def has_add_permission(self, request):
+        return not CancellationPolicy.objects.exists()  # правило одно
+
+    def has_delete_permission(self, request, obj=None):
+        return False

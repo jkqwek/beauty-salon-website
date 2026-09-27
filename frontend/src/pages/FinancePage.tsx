@@ -1,5 +1,4 @@
 // pages/FinancePage.tsx
-import { useAuth } from "@/auth/AuthContext"
 import { financeApi } from "@/api/api"
 import { useApi } from "@/api/useApi"
 import { ErrorMessage } from "../components/ErrorMessage"
@@ -16,26 +15,16 @@ import {
 } from "recharts"
 
 export function FinancePage() {
-  const { user } = useAuth()
-
   const revenue = useApi(() => financeApi.revenueReport({ group_by: "month" }), [])
   const workload = useApi(() => financeApi.employeeWorkload(), [])
   const income = useApi(() => financeApi.incomeSummary(), [])
   const expenses = useApi(() => financeApi.expenses(), [])
 
-  if (!user?.is_staff) {
-    return (
-      <div className="flex-1 flex items-center justify-center py-24 text-muted-foreground">
-        Доступно только администраторам.
-      </div>
-    )
-  }
-
   const loading = revenue.loading || workload.loading || income.loading || expenses.loading
   const error = revenue.error || workload.error || income.error || expenses.error
 
   return (
-    <div className="flex-1 bg-pearl pb-24 px-6 pt-12 max-w-5xl mx-auto w-full">
+    <div>
       <h1 className="text-3xl font-serif text-foreground mb-8">Финансы</h1>
 
       {loading && <p className="text-muted-foreground">Загрузка…</p>}
@@ -87,7 +76,8 @@ export function FinancePage() {
                     <tr>
                       <th className="p-4">Мастер</th>
                       <th className="p-4">Записей</th>
-                      <th className="p-4">Часов</th>
+                      <th className="p-4">Часов (план)</th>
+                      <th className="p-4">Часов (факт)</th>
                       <th className="p-4">Выручка</th>
                     </tr>
                   </thead>
@@ -97,6 +87,7 @@ export function FinancePage() {
                         <td className="p-4">{row.employee_name}</td>
                         <td className="p-4">{row.bookings_count}</td>
                         <td className="p-4">{row.total_hours}</td>
+                        <td className="p-4">{row.actual_hours}</td>
                         <td className="p-4">{formatPrice(row.total_revenue)}</td>
                       </tr>
                     ))}

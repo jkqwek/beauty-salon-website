@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 
 from django.utils import timezone
 
-from .models import Booking, Schedule, TimeOff
+from .models import Booking, CancellationPolicy, Schedule, TimeOff
 
 SLOT_STEP = timedelta(minutes=15)
 MAX_DAYS_AHEAD = 90  # на сколько дней вперёд можно записаться
@@ -40,3 +40,12 @@ def get_free_slots(employee_id, service, target_date):
             slots.append(current.strftime("%H:%M"))
         current += SLOT_STEP
     return slots
+
+
+def cancel_deadline_error(booking):
+    """Текст ошибки, если отменять/переносить уже поздно по правилу отмены, иначе None."""
+    hours = CancellationPolicy.load().deadline_hours
+    start = timezone.make_aware(datetime.combine(booking.date, booking.start_time))
+    if start - timezone.now() < timedelta(hours=hours):
+        return f"Отменить или перенести запись можно не позднее чем за {hours} ч до начала. Свяжитесь с салоном."
+    return None

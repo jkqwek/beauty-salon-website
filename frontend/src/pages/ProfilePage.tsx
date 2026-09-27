@@ -3,6 +3,7 @@ import { useOutletContext } from "react-router"
 import { useAuth } from "@/auth/AuthContext"
 import { bookingApi, type Booking } from "@/api/api"
 import { useApi } from "@/api/useApi"
+import { toApiError, type ApiError } from "@/api/client"
 import { formatDate, formatTime } from "@/lib/format"
 import { ErrorMessage } from "../components/ErrorMessage"
 import {
@@ -20,6 +21,8 @@ export function ProfilePage() {
   const { user } = useAuth()
   const { openAuth } = useOutletContext<{ openAuth: () => void }>()
   const bookings = useApi(bookingApi.my, [user?.id])
+  const policy = useApi(bookingApi.cancellationPolicy)
+  const [cancelError, setCancelError] = useState<ApiError | null>(null)
 
   if (!user) {
     return (
@@ -46,6 +49,17 @@ export function ProfilePage() {
     completed: "Завершена",
   }
   const displayName = user.first_name || user.username
+
+  const cancel = async (id: number) => {
+    if (!confirm("Отменить запись?")) return
+    setCancelError(null)
+    try {
+      await bookingApi.cancel(id)
+      bookings.reload()
+    } catch (e) {
+      setCancelError(toApiError(e)) // например, поздно по правилу отмены
+    }
+  }
 
   return (
     <div className="flex-1 bg-pearl pb-24">
@@ -111,6 +125,16 @@ export function ProfilePage() {
                 Ближайшие записи
               </h2>
 
+              {policy.data && (
+                <p className="text-sm text-muted-foreground -mt-4 mb-6">
+                  {policy.data.deadline_hours
+                    ? `Отменить или перенести запись можно не позднее чем за ${policy.data.deadline_hours} ч до визита.`
+                    : "Отменить или перенести запись можно в любой момент до начала визита."}
+                </p>
+              )}
+
+              {cancelError && <ErrorMessage error={cancelError} />}
+
               {bookings.loading && (
                 <p className="text-muted-foreground">Загрузка…</p>
               )}
@@ -156,7 +180,10 @@ export function ProfilePage() {
                         Перенести
                       </button>
 
-                      <button className="px-6 py-2 rounded-full bg-rose-50 border border-rose-200 text-rose-600 font-medium hover:bg-rose-100 transition-colors">
+                      <button
+                        onClick={() => cancel(b.id)}
+                        className="px-6 py-2 rounded-full bg-rose-50 border border-rose-200 text-rose-600 font-medium hover:bg-rose-100 transition-colors"
+                      >
                         Отменить
                       </button>
                     </div>

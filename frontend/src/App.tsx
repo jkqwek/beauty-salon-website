@@ -14,8 +14,7 @@ import { BookingWizard } from "./components/BookingWizard"
 import { AuthModal } from "./components/AuthModal"
 import { RouteError } from "./components/RouteError"
 import { AuthProvider, useAuth } from "./auth/AuthContext"
-import { DashboardPage } from "./pages/DashboardPage"
-import { FinancePage } from "./pages/FinancePage"
+import { PanelLayout, panelRoutes } from "./pages/PanelPage"
 
 function Layout() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
@@ -79,14 +78,14 @@ function Layout() {
             </NavLink>
             {user?.is_staff && (
               <NavLink
-                to="/dashboard"
+                to="/panel"
                 className={({ isActive }) =>
                   `text-sm font-medium transition-colors hover:text-gold ${
                     isActive ? "text-gold" : "text-muted-foreground"
                   }`
                 }
               >
-                Дашборд
+                Панель
               </NavLink>
             )}
           </nav>
@@ -169,11 +168,11 @@ function Layout() {
             </NavLink>
             {user?.is_staff && (
               <NavLink
-                to="/dashboard"
+                to="/panel"
                 onClick={() => setMobileMenuOpen(false)}
                 className="text-lg font-medium text-foreground"
               >
-                Дашборд
+                Панель
               </NavLink>
             )}
             {user ? (
@@ -276,8 +275,7 @@ const router = createBrowserRouter([
       { path: "services", Component: ServicesPage },
       { path: "masters", Component: MastersPage },
       { path: "profile", Component: ProfilePage },
-      { path: "dashboard", Component: DashboardPage },
-      { path: "finance", Component: FinancePage },
+      { path: "panel", Component: PanelLayout, children: panelRoutes },
     ],
   },
 ])

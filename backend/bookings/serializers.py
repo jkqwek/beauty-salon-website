@@ -4,7 +4,7 @@ from django.utils import timezone
 from rest_framework import serializers
 
 from catalog.models import Employee, Service
-from .models import Booking
+from .models import Booking, CancellationPolicy, Schedule, TimeOff
 from .services import MAX_DAYS_AHEAD, get_free_slots
 
 
@@ -58,3 +58,39 @@ class BookingCreateSerializer(serializers.Serializer):
             status="active",
             price=service.price
         )
+
+class AdminBookingSerializer(BookingSerializer):
+    """Запись в панели: видно клиента, менять можно только статус."""
+    client_name = serializers.SerializerMethodField()
+
+    class Meta(BookingSerializer.Meta):
+        read_only_fields = [f.name for f in Booking._meta.fields if f.name != "status"]
+
+    def get_client_name(self, b):
+        return b.client.get_full_name() or b.client.username
+
+
+class TimeRangeSerializer(serializers.ModelSerializer):
+    def validate(self, attrs):
+        start, end = attrs.get("start_time"), attrs.get("end_time")
+        if start and end and start >= end:
+            raise serializers.ValidationError({"end_time": "Конец должен быть позже начала."})
+        return attrs
+
+
+class ScheduleSerializer(TimeRangeSerializer):
+    class Meta:
+        model = Schedule
+        fields = "__all__"
+
+
+class TimeOffSerializer(TimeRangeSerializer):
+    class Meta:
+        model = TimeOff
+        fields = "__all__"
+
+
+class CancellationPolicySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CancellationPolicy
+        fields = ("deadline_hours",)

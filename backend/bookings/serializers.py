@@ -56,4 +56,5 @@ class BookingCreateSerializer(serializers.Serializer):
             start_time=validated_data["start_time"],
             end_time=(start + timedelta(minutes=service.duration_minutes)).time(),
             status="active",
+            price=service.price
         )

@@ -47,7 +47,8 @@ class Booking(models.Model):
     end_time = models.TimeField("Время окончания")
     status = models.CharField("Статус", max_length=10, choices=STATUS_CHOISES, default="active")
     created_at = models.DateTimeField(auto_now_add=True)
-    
+    price = models.DecimalField('Цена', max_digits=10, decimal_places=2, null=True, blank=True)
+
     class Meta:
         verbose_name = "Запись"
         verbose_name_plural = "Записи"

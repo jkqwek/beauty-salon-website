@@ -30,6 +30,8 @@ urlpatterns = [
     path("api/auth/register/", RegisterView.as_view(), name="register"),
     path("api/auth/login/", TokenObtainPairView.as_view(), name="token-obtain-pair"),
     path("api/auth/refresh/", TokenRefreshView.as_view(), name="token-refresh"),
-    path("api/auth/refresh/", TokenRefreshView.as_view(), name="token-refresh"),
     path("api/auth/me/", me, name="me"),
+    
+    path("api/finance/", include("finance.urls")),
+
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

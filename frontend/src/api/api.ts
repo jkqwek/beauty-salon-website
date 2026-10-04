@@ -5,7 +5,7 @@ export interface User {
   username: string
   email: string
   first_name: string
-  is_staff: boolean
+  is_staff: boolean // сотрудник: полные права
 }
 
 export interface Service {
@@ -36,6 +36,9 @@ export interface Booking {
   start_time: string // "10:00:00"
   end_time: string
   status: "active" | "cancelled" | "completed"
+  client: number
+  actual_start: string | null // ISO datetime, тайм-трекинг
+  actual_end: string | null
 }
 
 export interface RegisterData {
@@ -75,6 +78,80 @@ export const bookingApi = {
   create: (data: { employee: number; service: number; date: string; start_time: string }) =>
     api<Booking>("/bookings/", { method: "POST", body: data }),
   my: () => api<Booking[]>("/bookings/my/"),
+  cancel: (id: number) => api<Booking>(`/bookings/${id}/cancel/`, { method: "POST" }),
+  cancellationPolicy: () => api<CancellationPolicy>("/bookings/cancellation-policy/"),
+}
+
+export interface CancellationPolicy {
+  deadline_hours: number // отмена и перенос не позднее чем за N часов
+}
+
+export interface CabinetClient {
+  id: number
+  name: string
+  visits: number
+  phone: string
+  note: string // внутренний комментарий, клиенту не виден
+}
+
+export interface EmployeeCabinet {
+  employee: string
+  today: string
+  schedule: { day: string; start_time: string; end_time: string }[]
+  bookings: Booking[]
+  clients: CabinetClient[]
+}
+
+export const employeeApi = {
+  cabinet: () => api<EmployeeCabinet>("/bookings/employee/"),
+  trackTime: (bookingId: number) =>
+    api<Booking>(`/bookings/${bookingId}/track-time/`, { method: "POST" }),
+  saveNote: (clientId: number, note: string) =>
+    api<AdminUser>(`/admin/users/${clientId}/`, { method: "PATCH", body: { note } }),
+}
+
+export interface AdminUser {
+  id: number
+  username: string
+  first_name: string
+  last_name: string
+  email: string
+  phone: string | null
+  is_staff: boolean
+  date_joined: string
+  visits: number // по завершённым записям
+  last_visit: string | null
+  total_spent: string | null
+  note: string | null
+  master: string | null // карточка мастера, к которой привязан аккаунт
+}
+
+export interface AdminBooking extends Booking {
+  client_name: string
+  price: string | null
+}
+
+export const adminApi = {
+  users: () => api<AdminUser[]>("/admin/users/"),
+  bookings: (date: string) => api<AdminBooking[]>(`/admin/bookings/?date=${date}`),
+  setBookingStatus: (id: number, status: Booking["status"]) =>
+    api<AdminBooking>(`/admin/bookings/${id}/`, { method: "PATCH", body: { status } }),
+  load: (date: string) => api<SalonLoad>(`/admin/load/?date=${date}`),
+  setCancellationPolicy: (data: CancellationPolicy) =>
+    api<CancellationPolicy>("/bookings/cancellation-policy/", { method: "PATCH", body: data }),
+}
+
+/** Карта занятости: минуты в каждом часе дня */
+export interface SalonLoad {
+  date: string
+  hours: number[]
+  load: number | null // % занятости салона
+  masters: {
+    id: number
+    name: string
+    load: number | null // null — выходной
+    cells: { hour: number; work: number; busy: number; blocked: number }[]
+  }[]
 }
 
 export interface PopularServiceRow {
@@ -109,6 +186,7 @@ export interface EmployeeWorkloadRow {
   employee_name: string
   bookings_count: number
   total_hours: number
+  actual_hours: number
   total_revenue: string
 }
 

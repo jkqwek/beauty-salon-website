@@ -1,7 +1,7 @@
 from django.shortcuts import render
-from .models import Expense
+from .models import Expense, StockItem
 from catalog.permissions import IsAdminUser
-from .serializers import ExpenseSerializer
+from .serializers import ExpenseSerializer, StockItemSerializer
 from catalog.models import Employee
 
 from rest_framework import viewsets
@@ -18,6 +18,12 @@ class ExpenseViewSet(viewsets.ModelViewSet):
     queryset = Expense.objects.all()
     permission_classes = [IsAdminUser]
     serializer_class = ExpenseSerializer
+
+
+class StockItemViewSet(viewsets.ModelViewSet):
+    queryset = StockItem.objects.all()
+    permission_classes = [IsAdminUser]
+    serializer_class = StockItemSerializer
     
 @api_view(["GET"])
 @permission_classes([IsAdminUser])
@@ -149,27 +155,34 @@ def employee_workload_report(request):
     duration_expr = ExpressionWrapper(
         F("end_time") - F("start_time"), output_field=DurationField()
     )
+    # фактическое время из тайм-трекинга; записи без отметок в сумму не попадают (NULL)
+    actual_expr = ExpressionWrapper(
+        F("actual_end") - F("actual_start"), output_field=DurationField()
+    )
 
     rows = (
         bookings
-        .annotate(duration=duration_expr)
+        .annotate(duration=duration_expr, actual_duration=actual_expr)
         .values("employee_id", "employee__full_name")
         .annotate(
             bookings_count=Count("id"),
             total_revenue=Sum("price"),
             total_duration=Sum("duration"),
+            total_actual=Sum("actual_duration"),
         )
         .order_by("employee")
     )
-    
+
     result = []
     for row in rows:
         total_seconds = row["total_duration"].total_seconds() if row["total_duration"] else 0
+        actual_seconds = row["total_actual"].total_seconds() if row["total_actual"] else 0
         result.append({
             "employee_id": row["employee_id"],
             "employee_name": row["employee__full_name"],
             "bookings_count": row["bookings_count"],
             "total_hours": round(total_seconds / 3600, 1),
+            "actual_hours": round(actual_seconds / 3600, 1),
             "total_revenue": str(row["total_revenue"] or 0),
         })
 

@@ -16,7 +16,6 @@ export function RouteError() {
       </p>
       <NavLink
         to="/"
-        reloadDocument
         className="bg-gold hover:bg-gold-hover text-white px-8 py-3 rounded-full font-medium transition-colors"
       >
         На главную

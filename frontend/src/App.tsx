@@ -16,6 +16,7 @@ import { RouteError } from "./components/RouteError"
 import { AuthProvider, useAuth } from "./auth/AuthContext"
 import { DashboardPage } from "./pages/DashboardPage"
 import { FinancePage } from "./pages/FinancePage"
+import { BackToTopButton } from "./components/BackToTopButton"
 
 function Layout() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
@@ -242,6 +243,9 @@ function Layout() {
       >
         <Calendar className="size-6" />
       </button>
+
+      {/* Back to top */}
+      <BackToTopButton />
 
       {/* Booking Modal */}
       {bookingOpen && <BookingWizard onClose={() => setBookingOpen(false)} />}

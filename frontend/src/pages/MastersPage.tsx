@@ -5,6 +5,7 @@ import { masterPhoto } from "@/lib/photos"
 import { ErrorMessage } from "../components/ErrorMessage"
 import { ImageWithFallback } from "../components/ImageWithFallback"
 import { Star } from "lucide-react"
+import { ShareButtons } from "../components/ShareButtons"
 
 export function MastersPage() {
   const { openBooking } = useOutletContext<{ openBooking: () => void }>()
@@ -77,6 +78,13 @@ export function MastersPage() {
               <p className="text-muted-foreground text-center text-sm italic mb-8 flex-1">
                 {master.quote && `"${master.quote}"`}
               </p>
+
+              <div className="mb-4">
+                <ShareButtons
+                  url={`${window.location.origin}/masters`}
+                  title={master.name}
+                />
+              </div>
 
               <button
                 onClick={openBooking}

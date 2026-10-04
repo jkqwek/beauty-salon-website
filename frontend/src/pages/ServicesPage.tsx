@@ -8,6 +8,7 @@ import { formatDuration, formatPrice } from "@/lib/format"
 import { ErrorMessage } from "../components/ErrorMessage"
 import { ImageWithFallback } from "../components/ImageWithFallback"
 import { Clock } from "lucide-react"
+import { ShareButtons } from "../components/ShareButtons"
 
 const CATEGORIES = ["Все", "Волосы", "Ногти", "Кожа", "Массаж"]
 
@@ -121,6 +122,14 @@ export function ServicesPage() {
                     Выбрать
                   </button>
                 </div>
+
+                <div className="mt-4">
+                  <ShareButtons
+                    url={`${window.location.origin}/services`}
+                    title={service.name}
+                  />
+                </div>
+
               </div>
             </div>
           ))}

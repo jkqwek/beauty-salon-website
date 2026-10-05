@@ -2,19 +2,19 @@ from django.shortcuts import render
 # bookings/views.py
 from datetime import datetime, timedelta
 
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import mixins, serializers, status, viewsets
 
 from catalog.models import Employee, Service
-from .models import CancellationPolicy, Schedule, Booking, TimeOff, User
+from .models import ACTIVE_STATUSES, CancellationPolicy, Schedule, Booking, TimeOff, User
 from .serializers import (
     AdminBookingSerializer, BookingCreateSerializer, BookingSerializer, CancellationPolicySerializer,
     ScheduleSerializer, TimeOffSerializer,
 )
-from .services import cancel_deadline_error, get_free_slots
+from .services import cancel_deadline_error, get_free_slots, slot_taken
 from django.db.models import Count, F, Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -83,7 +83,7 @@ def cancel_booking(request, booking_id):
             status=status.HTTP_403_FORBIDDEN,
         )
 
-    if booking.status != "active":
+    if booking.status not in ACTIVE_STATUSES:
         return Response(
             {"error": "Эту запись уже нельзя отменить (она не активна)"},
             status=status.HTTP_400_BAD_REQUEST,
@@ -113,7 +113,7 @@ def reschedule_booking(request, booking_id):
             status=status.HTTP_403_FORBIDDEN,
         )
 
-    if booking.status != "active":
+    if booking.status not in ACTIVE_STATUSES:
         return Response(
             {"error": "Эту запись уже нельзя перенести (она не активна)"},
             status=status.HTTP_400_BAD_REQUEST,
@@ -147,18 +147,11 @@ def reschedule_booking(request, booking_id):
     new_end_time = new_end_dt.time()
 
     # повторная проверка занятости — исключаем саму эту запись, иначе конфликт сама с собой
-    existing_bookings = Booking.objects.filter(
-        employee=booking.employee, date=new_date, status="active"
-    ).exclude(id=booking.id)
-
-    for other in existing_bookings:
-        other_start = datetime.combine(new_date, other.start_time)
-        other_end = datetime.combine(new_date, other.end_time)
-        if new_start_dt < other_end and other_start < new_end_dt:
-            return Response(
-                {"error": "Это время уже занято, выберите другой слот"},
-                status=status.HTTP_409_CONFLICT,
-            )
+    if slot_taken(booking.employee_id, new_date, new_start_time, new_end_time, exclude_id=booking.id):
+        return Response(
+            {"error": "Это время уже занято, выберите другой слот"},
+            status=status.HTTP_409_CONFLICT,
+        )
 
     booking.date = new_date
     booking.start_time = new_start_time
@@ -172,7 +165,7 @@ def reschedule_booking(request, booking_id):
 @permission_classes([IsAdminUser])
 def popular_services_report(request):
     rows = (
-        Booking.objects.filter(status__in=["active", "completed"])
+        Booking.objects.exclude(status="cancelled")
         .values("service_id", "service__name")
         .annotate(bookings_count=Count("id"))
         .annotate(revenue=F("bookings_count") * F("service__price"))
@@ -193,7 +186,7 @@ def popular_services_report(request):
 def new_bookings_since(request):
     after_id = request.query_params.get("after_id")
     after_id = int(after_id) if after_id and after_id.isdigit() else 0
-    new_ones = Booking.objects.filter(id__gt=after_id, status="active").order_by("id")
+    new_ones = Booking.objects.filter(id__gt=after_id).exclude(status="cancelled").order_by("id")
     return Response({
         "latest_id": new_ones.last().id if new_ones.exists() else after_id,
         "count": new_ones.count(),
@@ -222,6 +215,7 @@ def employee_cabinet(request):
     )
     return Response({
         "employee": employee.full_name,
+        "employee_photo": employee.photo.url if employee.photo else None,
         "today": today,
         "schedule": [
             {"day": s.get_day_of_week_display(), "start_time": s.start_time, "end_time": s.end_time}
@@ -235,6 +229,7 @@ def employee_cabinet(request):
                 "visits": u.visits,
                 "phone": u.profile.phone if hasattr(u, "profile") else "",
                 "note": u.profile.note if hasattr(u, "profile") else "",
+                "is_regular": hasattr(u, "profile") and u.profile.is_regular,
             }
             for u in clients
         ],
@@ -246,13 +241,14 @@ def employee_cabinet(request):
 def track_time(request, booking_id):
     """Первый вызов — фактическое начало, второй — окончание (запись становится завершённой)."""
     booking = get_object_or_404(Booking, id=booking_id, employee__user=request.user)
-    if booking.status != "active":
+    if booking.status not in ACTIVE_STATUSES:
         raise ValidationError("Запись не активна.")
     if booking.date != timezone.localdate():
         raise ValidationError("Отмечать время можно только у сегодняшних записей.")
 
     if booking.actual_start is None:
         booking.actual_start = timezone.now()
+        booking.status = "confirmed"  # клиент пришёл — запись подтверждена по факту
     else:
         booking.actual_end = timezone.now()
         booking.status = "completed"
@@ -261,16 +257,26 @@ def track_time(request, booking_id):
 
 
 class AdminBookingViewSet(mixins.ListModelMixin, mixins.UpdateModelMixin, viewsets.GenericViewSet):
-    """Панель: записи за день (?date=ГГГГ-ММ-ДД) и смена статуса."""
+    """Панель: записи за период (?date_from=&date_to=, ГГГГ-ММ-ДД) и смена статуса."""
     serializer_class = AdminBookingSerializer
     permission_classes = [IsAdminUser]
 
     def get_queryset(self):
-        qs = Booking.objects.select_related("client", "service", "employee").order_by("date", "start_time")
-        day = self.request.query_params.get("date")
-        if day:
-            qs = qs.filter(date=serializers.DateField().run_validation(day))
+        qs = (
+            Booking.objects.select_related("client__profile", "service", "employee")
+            .order_by("date", "start_time")
+        )
+        for param, lookup in (("date_from", "date__gte"), ("date_to", "date__lte")):
+            value = self.request.query_params.get(param)
+            if value:
+                qs = qs.filter(**{lookup: serializers.DateField().run_validation(value)})
         return qs
+
+    @action(detail=False, url_path="pending-count")
+    def pending_count(self, request):
+        """Сколько будущих записей ждёт подтверждения — счётчик в меню панели."""
+        count = Booking.objects.filter(status="pending", date__gte=timezone.localdate()).count()
+        return Response({"count": count})
 
 
 class ScheduleViewSet(viewsets.ModelViewSet):
@@ -315,7 +321,7 @@ def salon_load(request):
     """Карта занятости мастеров по часам за день (?date=ГГГГ-ММ-ДД, по умолчанию сегодня)."""
     day = serializers.DateField().run_validation(request.query_params.get("date") or str(timezone.localdate()))
     schedules = {s.employee_id: s for s in Schedule.objects.filter(day_of_week=day.weekday())}
-    bookings = list(Booking.objects.filter(date=day, status__in=["active", "completed"]))
+    bookings = list(Booking.objects.filter(date=day).exclude(status="cancelled"))
     time_offs = list(TimeOff.objects.filter(date=day))
     hours = range(
         min((s.start_time.hour for s in schedules.values()), default=9),

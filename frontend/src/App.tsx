@@ -4,7 +4,7 @@ import {
   Outlet,
   NavLink,
 } from "react-router"
-import { Sparkles, Calendar, User, Menu, X, LogOut } from "lucide-react"
+import { Sparkles, Calendar, Menu, X, LogOut } from "lucide-react"
 import { useState } from "react"
 import { HomePage } from "./pages/HomePage"
 import { MastersPage } from "./pages/MastersPage"
@@ -16,6 +16,7 @@ import { RouteError } from "./components/RouteError"
 import { AuthProvider, useAuth } from "./auth/AuthContext"
 import { PanelLayout, panelRoutes } from "./pages/PanelPage"
 import { BackToTopButton } from "./components/BackToTopButton"
+import { Avatar } from "./components/Avatar"
 
 function Layout() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
@@ -96,9 +97,14 @@ function Layout() {
               <>
                 <NavLink
                   to="/profile"
-                  className="p-2 text-muted-foreground hover:text-gold transition-colors"
+                  title="Личный кабинет"
+                  className="rounded-full hover:ring-2 hover:ring-gold/40 transition-shadow"
                 >
-                  <User className="size-5" />
+                  <Avatar
+                    src={user.avatar}
+                    name={[user.first_name, user.last_name].filter(Boolean).join(" ") || user.username}
+                    className="size-9 text-xs"
+                  />
                 </NavLink>
                 <button
                   onClick={logout}
@@ -247,7 +253,13 @@ function Layout() {
       <BackToTopButton />
 
       {/* Booking Modal */}
-      {bookingOpen && <BookingWizard onClose={() => setBookingOpen(false)} />}
+      {/* чёрный список: говорим сразу, а не на последнем шаге записи */}
+      {bookingOpen &&
+        (user?.is_blocked ? (
+          <BlockedNotice onClose={() => setBookingOpen(false)} />
+        ) : (
+          <BookingWizard onClose={() => setBookingOpen(false)} />
+        ))}
 
       {/* Auth Modal */}
       {authOpen && (
@@ -289,5 +301,30 @@ export default function App() {
     <AuthProvider>
       <RouterProvider router={router} />
     </AuthProvider>
+  )
+}
+
+function BlockedNotice({ onClose }: { onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+      <div
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="blocked-title"
+        className="bg-white w-full max-w-sm rounded-[2rem] shadow-2xl p-8 text-center space-y-4"
+      >
+        <h2 id="blocked-title" className="text-2xl font-serif text-foreground">
+          Запись недоступна
+        </h2>
+        <p className="text-muted-foreground">Онлайн-запись недоступна. Свяжитесь с салоном.</p>
+        <button
+          onClick={onClose}
+          autoFocus
+          className="bg-gold hover:bg-gold-hover text-white px-8 py-3 rounded-full font-medium transition-colors"
+        >
+          Понятно
+        </button>
+      </div>
+    </div>
   )
 }

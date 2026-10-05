@@ -33,11 +33,17 @@ class Schedule(models.Model):
     def __str__(self):
         return f"{self.employee} — {self.get_day_of_week_display()} {self.start_time}-{self.end_time}"
 
+
+# запись ещё впереди и держит время мастера
+ACTIVE_STATUSES = ("pending", "confirmed")
+
+
 class Booking(models.Model):
     STATUS_CHOISES = [
-        ("active", "Активна"),
+        ("pending", "Ждёт подтверждения"),
+        ("confirmed", "Подтверждена"),
+        ("completed", "Выполнена"),
         ("cancelled", "Отменена"),
-        ("completed", "Завершена"),
     ]
     client = models.ForeignKey(User, on_delete=models.CASCADE, related_name='bookings')
     employee = models.ForeignKey(Employee, on_delete=models.CASCADE, related_name='bookings')
@@ -45,7 +51,7 @@ class Booking(models.Model):
     date = models.DateField("Дата записи")
     start_time = models.TimeField("Время начала")
     end_time = models.TimeField("Время окончания")
-    status = models.CharField("Статус", max_length=10, choices=STATUS_CHOISES, default="active")
+    status = models.CharField("Статус", max_length=10, choices=STATUS_CHOISES, default="pending")
     created_at = models.DateTimeField(auto_now_add=True)
     price = models.DecimalField('Цена', max_digits=10, decimal_places=2, null=True, blank=True)
     # тайм-трекинг: мастер жмёт "Начать"/"Завершить" в своём кабинете

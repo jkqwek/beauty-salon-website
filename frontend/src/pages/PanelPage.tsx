@@ -1,29 +1,47 @@
-import { useState, type FormEvent } from "react"
+import { useEffect, useState, type FormEvent } from "react"
 import { NavLink, Outlet } from "react-router"
 import {
   Ban,
   Calendar,
   CalendarClock,
   CalendarX2,
+  Camera,
   ChartColumn,
+  Check,
   ChevronLeft,
   ChevronRight,
   LayoutGrid,
   Package,
   Receipt,
   Scissors,
+  Star,
   User,
   UserCog,
   Users,
   Wallet,
 } from "lucide-react"
 import { useAuth } from "@/auth/AuthContext"
-import { adminApi, bookingApi, catalogApi, type Booking, type SalonLoad } from "@/api/api"
+import { adminApi, bookingApi, catalogApi, type Booking, type Employee, type SalonLoad } from "@/api/api"
 import { toApiError, type ApiError } from "@/api/client"
 import { useApi } from "@/api/useApi"
-import { formatDate, formatPrice, formatTime, shiftDate, toIsoDate } from "@/lib/format"
-import { CrudTable, INPUT, downloadCsv, exportButton, type Option, type Row } from "../components/CrudTable"
+import {
+  formatDate,
+  formatDayHeader,
+  formatPrice,
+  formatTime,
+  periodLabel,
+  periodRange,
+  shiftDate,
+  shiftPeriod,
+  toIsoDate,
+  type PeriodMode,
+} from "@/lib/format"
+import { masterPhoto } from "@/lib/photos"
+import { Avatar } from "../components/Avatar"
+import { AvatarCropper } from "../components/AvatarCropper"
+import { CrudTable, INPUT, downloadCsv, exportButton, type Option, type Row, type RowActions } from "../components/CrudTable"
 import { ErrorMessage } from "../components/ErrorMessage"
+import { BOOKING_STATUS, PENDING_CHANGED } from "../components/StatusBadge"
 import { EmployeePage } from "./EmployeePage"
 import { DashboardPage } from "./DashboardPage"
 import { FinancePage } from "./FinancePage"
@@ -31,12 +49,6 @@ import { FinancePage } from "./FinancePage"
 const DAYS: Option[] = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"].map(
   (label, value) => ({ value, label }),
 )
-
-const STATUS: Record<Booking["status"], { label: string; cls: string }> = {
-  active: { label: "Активна", cls: "bg-gold/10 text-gold border-gold/30" },
-  completed: { label: "Завершена", cls: "bg-green-50 text-green-700 border-green-200" },
-  cancelled: { label: "Отменена", cls: "bg-rose-50 text-rose-600 border-rose-200" },
-}
 
 const badge = (text: string, cls: string) => (
   <span className={`inline-block px-3 py-1 rounded-full border text-xs font-medium whitespace-nowrap ${cls}`}>{text}</span>
@@ -77,10 +89,47 @@ function DayNav({ day, onChange }: { day: string; onChange: (day: string) => voi
   )
 }
 
+const PERIODS: { mode: PeriodMode; label: string }[] = [
+  { mode: "day", label: "Сегодня" },
+  { mode: "week", label: "Неделя" },
+  { mode: "month", label: "Месяц" },
+]
+
+const chipCls = (active: boolean) =>
+  `px-4 py-1.5 rounded-full border text-sm font-medium transition-colors ${
+    active ? "bg-gold text-white border-gold" : "bg-white text-muted-foreground border-rose-200 hover:border-gold hover:text-foreground"
+  }`
+
+/** Статус прямо в строке: цветная «таблетка» с иконкой, внутри — выпадающий список */
+function StatusSelect({ status, onChange }: { status: Booking["status"]; onChange: (s: Booking["status"]) => void }) {
+  const { cls, icon: Icon } = BOOKING_STATUS[status]
+  return (
+    <span className={`inline-flex items-center gap-1 pl-2.5 pr-1 rounded-full border text-xs font-medium ${cls}`}>
+      <Icon className="size-3.5 shrink-0" />
+      <select
+        value={status}
+        onChange={(e) => onChange(e.target.value as Booking["status"])}
+        aria-label="Статус записи"
+        className="bg-transparent py-1 focus:outline-none cursor-pointer"
+      >
+        {Object.entries(BOOKING_STATUS).map(([value, s]) => (
+          <option key={value} value={value}>
+            {s.label}
+          </option>
+        ))}
+      </select>
+    </span>
+  )
+}
+
 function BookingsSection() {
-  const [day, setDay] = useState(() => toIsoDate(new Date()))
-  const [master, setMaster] = useState("")
-  const { data, error, reload } = useApi(() => adminApi.bookings(day), [day])
+  const today = toIsoDate(new Date())
+  const [mode, setMode] = useState<PeriodMode>("day")
+  const [anchor, setAnchor] = useState(today)
+  const [master, setMaster] = useState<number | null>(null) // null — все мастера
+  const range = periodRange(mode, anchor)
+  const { data, error, reload } = useApi(() => adminApi.bookings(...range), [range[0], range[1]])
+  const employees = useApi(catalogApi.employees)
   const [actionError, setActionError] = useState<ApiError | null>(null)
 
   const setStatus = async (id: number, status: Booking["status"]) => {
@@ -88,27 +137,32 @@ function BookingsSection() {
     try {
       await adminApi.setBookingStatus(id, status)
       reload()
+      window.dispatchEvent(new Event(PENDING_CHANGED))
     } catch (e) {
       setActionError(toApiError(e))
     }
   }
 
-  const masters = [...new Set(data?.map((b) => b.employee_name))]
-  const rows = data?.filter((b) => !master || b.employee_name === master) ?? []
+  const masters = (employees.data ?? []).filter((m) => m.is_active !== false)
+  const rows = (data ?? []).filter((b) => master === null || b.employee === master)
+  const days = [...new Set(rows.map((b) => b.date))]
   const revenue = rows.filter((b) => b.status !== "cancelled").reduce((sum, b) => sum + Number(b.price ?? 0), 0)
+  const pending = rows.filter((b) => b.status === "pending").length
 
   const exportCsv = () =>
-    downloadCsv(`Записи ${day}.csv`, [
-      ["Дата", "Начало", "Конец", "Клиент", "Услуга", "Мастер", "Цена", "Статус"],
+    downloadCsv(`Записи ${range[0]}${mode === "day" ? "" : `—${range[1]}`}.csv`, [
+      ["Дата", "Начало", "Конец", "Клиент", "Постоянный", "Чёрный список", "Услуга", "Мастер", "Цена", "Статус"],
       ...rows.map((b) => [
-        day,
+        b.date,
         formatTime(b.start_time),
         formatTime(b.end_time),
         b.client_name,
+        b.client_is_regular ? "Да" : "",
+        b.client_is_blocked ? "Да" : "",
         b.service_name,
         b.employee_name,
         b.price ?? "",
-        STATUS[b.status].label,
+        BOOKING_STATUS[b.status].label,
       ]),
     ])
 
@@ -116,31 +170,63 @@ function BookingsSection() {
     <div>
       <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
         <h1 className="text-3xl font-serif text-foreground">Записи</h1>
-        <DayNav day={day} onChange={setDay} />
+        <div className="flex flex-wrap items-center gap-2">
+          {PERIODS.map((p) => (
+            <button
+              key={p.mode}
+              onClick={() => {
+                setMode(p.mode)
+                setAnchor(today)
+              }}
+              aria-pressed={mode === p.mode}
+              className={chipCls(mode === p.mode)}
+            >
+              {p.mode === "day" && anchor !== today && mode === "day" ? "День" : p.label}
+            </button>
+          ))}
+          <button onClick={() => setAnchor(shiftPeriod(mode, anchor, -1))} aria-label="Предыдущий период" className="p-2 rounded-full bg-white border border-rose-200 hover:border-gold transition-colors">
+            <ChevronLeft className="size-4" />
+          </button>
+          <button onClick={() => setAnchor(shiftPeriod(mode, anchor, 1))} aria-label="Следующий период" className="p-2 rounded-full bg-white border border-rose-200 hover:border-gold transition-colors">
+            <ChevronRight className="size-4" />
+          </button>
+          <input
+            type="date"
+            value={anchor}
+            onChange={(e) => {
+              if (!e.target.value) return
+              setMode("day") // календарь выбирает конкретный день
+              setAnchor(e.target.value)
+            }}
+            aria-label="Выбрать день"
+            className="px-4 py-2 rounded-full border border-rose-200 bg-white text-sm focus:outline-none focus:border-gold"
+          />
+        </div>
+      </div>
+
+      <div className="flex flex-wrap gap-2 mb-4">
+        {[{ id: null, name: "Все", count: data?.length ?? 0 }, ...masters.map((m) => ({
+          id: m.id as number | null,
+          name: m.full_name,
+          count: (data ?? []).filter((b) => b.employee === m.id).length,
+        }))].map((chip) => (
+          <button key={chip.id ?? "all"} onClick={() => setMaster(chip.id)} aria-pressed={master === chip.id} className={chipCls(master === chip.id)}>
+            {chip.name} <span className="opacity-70">{chip.count}</span>
+          </button>
+        ))}
       </div>
 
       <div className="flex flex-wrap items-center gap-3 mb-6">
-        <p className="text-muted-foreground mr-auto">
-          {formatDate(day)} · {rows.length} зап. · {formatPrice(String(revenue))}
+        <p className="text-muted-foreground mr-auto first-letter:uppercase">
+          {periodLabel(mode, range)} · {rows.length} зап. · {formatPrice(String(revenue))}
+          {pending > 0 && <span className="ml-2 text-yellow-800">· ждут подтверждения: {pending}</span>}
         </p>
-        {masters.length > 1 && (
-          <select
-            value={master}
-            onChange={(e) => setMaster(e.target.value)}
-            className="px-4 py-2 rounded-full border border-rose-200 bg-white text-sm focus:outline-none focus:border-gold"
-          >
-            <option value="">Все мастера</option>
-            {masters.map((m) => (
-              <option key={m}>{m}</option>
-            ))}
-          </select>
-        )}
         {exportButton(exportCsv, rows.length === 0)}
       </div>
 
       {!data && <Loader q={{ error, reload }} />}
       {actionError && <ErrorMessage error={actionError} />}
-      {data && rows.length === 0 && <p className="text-muted-foreground">На этот день записей нет.</p>}
+      {data && rows.length === 0 && <p className="text-muted-foreground">За этот период записей нет.</p>}
 
       {rows.length > 0 && (
         <div className="bg-white rounded-3xl border border-rose-100 overflow-x-auto">
@@ -148,35 +234,57 @@ function BookingsSection() {
             <thead className="bg-rose-50 text-muted-foreground text-left">
               <tr>
                 {["Время", "Клиент", "Услуга", "Мастер", "Цена", "Статус"].map((h) => (
-                  <th key={h} className="p-4 font-medium">{h}</th>
+                  <th key={h} className="p-4 font-medium">
+                    {h}
+                  </th>
                 ))}
               </tr>
             </thead>
-            <tbody>
-              {rows.map((b) => (
-                <tr key={b.id} className="border-t border-rose-50 hover:bg-rose-50/40 transition-colors">
-                  <td className="p-4 whitespace-nowrap font-medium">
-                    {formatTime(b.start_time)}–{formatTime(b.end_time)}
-                  </td>
-                  <td className="p-4">{b.client_name}</td>
-                  <td className="p-4">{b.service_name}</td>
-                  <td className="p-4">{b.employee_name}</td>
-                  <td className="p-4 whitespace-nowrap">{b.price ? formatPrice(b.price) : "—"}</td>
-                  <td className="p-4">
-                    <select
-                      value={b.status}
-                      onChange={(e) => setStatus(b.id, e.target.value as Booking["status"])}
-                      aria-label="Статус записи"
-                      className={`px-3 py-1 rounded-full border text-xs font-medium focus:outline-none ${STATUS[b.status].cls}`}
-                    >
-                      {Object.entries(STATUS).map(([value, s]) => (
-                        <option key={value} value={value}>{s.label}</option>
-                      ))}
-                    </select>
-                  </td>
+            {days.map((day) => (
+              <tbody key={day}>
+                <tr className="border-t border-rose-100 bg-rose-50/50">
+                  <th colSpan={6} className="px-4 py-2 text-left font-serif text-base font-normal text-foreground first-letter:uppercase">
+                    {formatDayHeader(day)}
+                  </th>
                 </tr>
-              ))}
-            </tbody>
+                {rows
+                  .filter((b) => b.date === day)
+                  .map((b) => (
+                    <tr key={b.id} className="border-t border-rose-50 hover:bg-rose-50/40 transition-colors">
+                      <td className="p-4 whitespace-nowrap font-medium">
+                        {formatTime(b.start_time)}–{formatTime(b.end_time)}
+                      </td>
+                      <td className="p-4">
+                        <span className="inline-flex flex-wrap items-center gap-1.5">
+                          {b.client_is_regular && (
+                            <span role="img" aria-label="Постоянный клиент" title="Постоянный клиент">
+                              <Star className="size-4 fill-gold text-gold" />
+                            </span>
+                          )}
+                          {b.client_name}
+                          {b.client_is_blocked && badge("чёрный список", "bg-red-50 text-red-700 border-red-200")}
+                        </span>
+                      </td>
+                      <td className="p-4">{b.service_name}</td>
+                      <td className="p-4">{b.employee_name}</td>
+                      <td className="p-4 whitespace-nowrap">{b.price ? formatPrice(b.price) : "—"}</td>
+                      <td className="p-4">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <StatusSelect status={b.status} onChange={(s) => setStatus(b.id, s)} />
+                          {b.status === "pending" && (
+                            <button
+                              onClick={() => setStatus(b.id, "confirmed")}
+                              className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-green-600 hover:bg-green-700 text-white text-xs font-medium transition-colors whitespace-nowrap"
+                            >
+                              <Check className="size-3.5" /> Подтвердить
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+              </tbody>
+            ))}
           </table>
         </div>
       )}
@@ -274,6 +382,19 @@ function LoadSection() {
   )
 }
 
+const clientName = (r: Row) => [r.first_name, r.last_name].filter(Boolean).join(" ") || r.username
+
+/** ⭐ в один клик. Контурная золотая — подсказка: часто ходит, но ещё не отмечен */
+function StarToggle({ row, act }: { row: Row; act: RowActions }) {
+  const on = Boolean(row.is_regular)
+  const title = on ? "Постоянный клиент — убрать" : row.is_candidate ? "Часто ходит — отметить постоянным?" : "Отметить постоянным"
+  return (
+    <button onClick={() => act.patch({ is_regular: !on })} title={title} aria-label={title} aria-pressed={on} className="p-1 rounded-full hover:bg-rose-50 transition-colors">
+      <Star className={`size-5 ${on ? "fill-gold text-gold" : row.is_candidate ? "text-gold" : "text-rose-200 hover:text-gold"}`} />
+    </button>
+  )
+}
+
 function ClientsSection() {
   const { user } = useAuth()
   return (
@@ -282,20 +403,38 @@ function ClientsSection() {
       endpoint="/admin/users/"
       canCreate={false}
       canDelete={false}
+      filters={[
+        { label: "⭐ Постоянные", test: (r) => Boolean(r.is_regular) },
+        { label: "☆ Кандидаты", test: (r) => r.is_candidate },
+        { label: "Чёрный список", test: (r) => Boolean(r.is_blocked) },
+      ]}
+      beforeSubmit={(values, row) =>
+        row === "new" || !values.is_blocked || Boolean(row.is_blocked) ||
+        confirm(`Добавить ${clientName(row)} в чёрный список? Онлайн-запись для клиента станет недоступна.`)
+      }
       fields={[
+        { name: "is_regular", label: "⭐", type: "checkbox", inForm: false, render: (r, act) => <StarToggle row={r} act={act} /> },
         {
           name: "first_name",
           label: "Имя",
           render: (r) => (
-            <div>
-              <p className="font-medium">
-                {[r.first_name, r.last_name].filter(Boolean).join(" ") || r.username}
-                {r.id === user?.id && " (вы)"}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                {r.username}
-                {r.master && ` · мастер ${r.master}`}
-              </p>
+            <div className="flex items-center gap-3 min-w-56">
+              <Avatar src={r.avatar} name={clientName(r)} className="size-9 text-xs" />
+              <div>
+                <p className="font-medium flex flex-wrap items-center gap-2">
+                  {clientName(r)}
+                  {r.id === user?.id && " (вы)"}
+                  {r.is_blocked && (
+                    <span title={[r.blocked_reason, r.blocked_at && `с ${formatDate(r.blocked_at.slice(0, 10))}`].filter(Boolean).join(" · ")}>
+                      {badge("чёрный список", "bg-red-50 text-red-700 border-red-200")}
+                    </span>
+                  )}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {r.username}
+                  {r.master && ` · мастер ${r.master}`}
+                </p>
+              </div>
             </div>
           ),
         },
@@ -312,7 +451,7 @@ function ClientsSection() {
           ],
           render: (r) =>
             r.is_staff
-              ? badge("Сотрудник", "bg-gold/10 text-gold border-gold/30")
+              ? badge("Сотрудник", "bg-gold/10 text-gold-dark border-gold/30")
               : badge("Покупатель", "bg-rose-50 text-muted-foreground border-rose-200"),
         },
         { name: "visits", label: "Визитов", inForm: false },
@@ -321,6 +460,8 @@ function ClientsSection() {
         { name: "master", label: "Карточка мастера", inForm: false, inTable: false },
         { name: "username", label: "Логин", inForm: false, inTable: false },
         { name: "note", label: "Внутренний комментарий", type: "textarea", render: (r) => r.note && <span className="text-rose-700">{r.note}</span> },
+        { name: "is_blocked", label: "В чёрном списке (запрет онлайн-записи)", type: "checkbox", inTable: false },
+        { name: "blocked_reason", label: "Причина блокировки (необязательно)", inTable: false },
       ]}
     />
   )
@@ -399,6 +540,51 @@ function ServicesSection() {
   )
 }
 
+/** Фото карточки мастера: клик — загрузить и обрезать / удалить */
+function MasterPhotoCell({ row, act }: { row: Row; act: RowActions }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <>
+      <button onClick={() => setOpen(true)} title="Изменить фото" aria-label={`Фото: ${row.full_name}`} className="relative group rounded-full">
+        <Avatar src={masterPhoto(row as Employee)} name={row.full_name} className="size-12 text-sm" />
+        <span className="absolute inset-0 rounded-full bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+          <Camera className="size-4 text-white" />
+        </span>
+      </button>
+      {open && (
+        <AvatarCropper
+          title={`Фото: ${row.full_name}`}
+          hasPhoto={Boolean(row.photo)}
+          onSave={(blob) => catalogApi.uploadMasterPhoto(row.id, blob).then(act.reload)}
+          onDelete={() => catalogApi.deleteMasterPhoto(row.id).then(act.reload)}
+          onClose={() => setOpen(false)}
+        />
+      )}
+    </>
+  )
+}
+
+/** Сколько записей ждут подтверждения — счётчик у «Записей» в меню */
+function usePendingCount(enabled: boolean) {
+  const [count, setCount] = useState(0)
+  useEffect(() => {
+    if (!enabled) return
+    const load = () =>
+      adminApi
+        .pendingCount()
+        .then((r) => setCount(r.count))
+        .catch(() => {})
+    load()
+    const timer = setInterval(load, 60_000)
+    window.addEventListener(PENDING_CHANGED, load)
+    return () => {
+      clearInterval(timer)
+      window.removeEventListener(PENDING_CHANGED, load)
+    }
+  }, [enabled])
+  return count
+}
+
 function MastersSection() {
   const services = useApi(catalogApi.services)
   const users = useApi(adminApi.users)
@@ -415,6 +601,7 @@ function MastersSection() {
       canDelete={false} // удаление каскадом удалит записи — вместо этого снимаем "Работает"
       rowClass={(r) => (r.is_active ? "" : "opacity-50")}
       fields={[
+        { name: "photo", label: "Фото", inForm: false, render: (r, act) => <MasterPhotoCell row={r} act={act} /> },
         { name: "full_name", label: "ФИО" },
         { name: "specialization", label: "Специализация" },
         { name: "phone", label: "Телефон" },
@@ -533,6 +720,7 @@ export const panelRoutes = SECTIONS.map(({ path, Component }) =>
 
 export function PanelLayout() {
   const { user, loading } = useAuth()
+  const pending = usePendingCount(Boolean(user?.is_staff))
 
   if (!user?.is_staff) {
     return (
@@ -562,6 +750,15 @@ export function PanelLayout() {
                 }
               >
                 <Icon className="size-4 shrink-0" /> {label}
+                {path === "" && pending > 0 && (
+                  <span
+                    title="Ждут подтверждения"
+                    aria-label={`ждут подтверждения: ${pending}`}
+                    className="ml-auto min-w-6 px-2 py-0.5 rounded-full bg-yellow-400 text-yellow-950 text-xs font-semibold text-center"
+                  >
+                    {pending}
+                  </span>
+                )}
               </NavLink>
             ))}
           </nav>

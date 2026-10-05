@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 
 from django.utils import timezone
 
-from .models import Booking, CancellationPolicy, Schedule, TimeOff
+from .models import ACTIVE_STATUSES, Booking, CancellationPolicy, Schedule, TimeOff
 
 SLOT_STEP = timedelta(minutes=15)
 MAX_DAYS_AHEAD = 90  # на сколько дней вперёд можно записаться
@@ -20,7 +20,7 @@ def get_free_slots(employee_id, service, target_date):
     busy = [
         (datetime.combine(target_date, b.start_time), datetime.combine(target_date, b.end_time))
         for b in Booking.objects.filter(
-            employee_id=employee_id, date=target_date, status="active"
+            employee_id=employee_id, date=target_date, status__in=ACTIVE_STATUSES
         )
     ] + [
         (datetime.combine(target_date, t.start_time), datetime.combine(target_date, t.end_time))
@@ -40,6 +40,16 @@ def get_free_slots(employee_id, service, target_date):
             slots.append(current.strftime("%H:%M"))
         current += SLOT_STEP
     return slots
+
+
+def slot_taken(employee_id, day, start, end, exclude_id=None):
+    """Пересекается ли интервал с другой (не отменённой) записью мастера."""
+    return (
+        Booking.objects.filter(employee_id=employee_id, date=day, start_time__lt=end, end_time__gt=start)
+        .exclude(status="cancelled")
+        .exclude(pk=exclude_id)
+        .exists()
+    )
 
 
 def cancel_deadline_error(booking):

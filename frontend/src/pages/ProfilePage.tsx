@@ -1,19 +1,16 @@
-import { useState } from "react"
+import { useState, type FormEvent } from "react"
 import { useOutletContext } from "react-router"
 import { useAuth } from "@/auth/AuthContext"
-import { bookingApi, type Booking } from "@/api/api"
+import { authApi, bookingApi, type Booking, type ProfileData, type User as UserType } from "@/api/api"
 import { useApi } from "@/api/useApi"
-import { toApiError, type ApiError } from "@/api/client"
+import { fieldMessages, toApiError, type ApiError } from "@/api/client"
 import { formatDate, formatTime } from "@/lib/format"
+import { validators } from "@/lib/validators"
+import { Avatar } from "../components/Avatar"
+import { AvatarCropper } from "../components/AvatarCropper"
 import { ErrorMessage } from "../components/ErrorMessage"
-import {
-  User,
-  Calendar,
-  Clock,
-  CheckCircle2,
-  MoreVertical,
-  Upload,
-} from "lucide-react"
+import { StatusBadge, isActiveStatus } from "../components/StatusBadge"
+import { User, Calendar, Camera, Clock, MoreVertical } from "lucide-react"
 
 export function ProfilePage() {
   const [activeTab, setActiveTab] = useState("appointments")
@@ -40,15 +37,10 @@ export function ProfilePage() {
   }
 
   const isUpcoming = (b: Booking) =>
-    b.status === "active" && new Date(`${b.date}T${b.start_time}`) > new Date()
+    isActiveStatus(b.status) && new Date(`${b.date}T${b.start_time}`) > new Date()
   const upcoming = (bookings.data ?? []).filter(isUpcoming)
   const history = (bookings.data ?? []).filter((b) => !isUpcoming(b))
-  const STATUS: Record<Booking["status"], string> = {
-    active: "Прошла",
-    cancelled: "Отменена",
-    completed: "Завершена",
-  }
-  const displayName = user.first_name || user.username
+  const displayName = [user.first_name, user.last_name].filter(Boolean).join(" ") || user.username
 
   const cancel = async (id: number) => {
     if (!confirm("Отменить запись?")) return
@@ -66,9 +58,7 @@ export function ProfilePage() {
       {/* Header */}
       <div className="bg-rose-50 border-b border-rose-100 py-12 px-6">
         <div className="max-w-5xl mx-auto flex items-center gap-6">
-          <div className="size-24 rounded-full bg-white border-2 border-gold flex items-center justify-center text-gold text-3xl font-serif">
-            {displayName.slice(0, 2).toUpperCase()}
-          </div>
+          <Avatar src={user.avatar} name={displayName} className="size-24 text-3xl font-serif border-2 border-gold" />
           <div>
             <h1 className="text-3xl font-serif text-foreground mb-1">
               {displayName}
@@ -161,9 +151,10 @@ export function ProfilePage() {
                     <div className="absolute left-0 top-0 bottom-0 w-2 bg-gold"></div>
 
                     <div>
-                      <div className="flex items-center gap-2 text-gold font-medium mb-1">
+                      <div className="flex flex-wrap items-center gap-2 text-gold font-medium mb-1">
                         <Calendar className="size-4" />{" "}
                         {formatDate(b.date)} • {formatTime(b.start_time)}
+                        <StatusBadge status={b.status} />
                       </div>
 
                       <h3 className="text-xl font-serif text-foreground mb-2">
@@ -214,10 +205,7 @@ export function ProfilePage() {
                         {formatDate(visit.date)} • {visit.employee_name}
                       </p>
 
-                      <span className="inline-flex items-center gap-1 px-3 py-1 bg-green-50 text-green-700 text-xs font-medium rounded-full">
-                        <CheckCircle2 className="size-3" />{" "}
-                        {STATUS[visit.status]}
-                      </span>
+                      <StatusBadge status={visit.status} />
                     </div>
 
                     <button className="text-muted-foreground hover:text-gold transition-colors p-2">
@@ -235,94 +223,126 @@ export function ProfilePage() {
                 Редактировать профиль
               </h2>
 
-              <div className="bg-white border border-rose-100 rounded-3xl p-8 shadow-sm">
-                <div className="flex items-center gap-6 mb-8 pb-8 border-b border-rose-100">
-                  <div className="relative group cursor-pointer">
-                    <div className="size-24 rounded-full bg-rose-50 border-2 border-dashed border-rose-200 flex items-center justify-center text-rose-300">
-                      <User className="size-10" />
-                    </div>
-
-                    <div className="absolute inset-0 rounded-full bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                      <Upload className="size-6 text-white" />
-                    </div>
-                  </div>
-
-                  <div>
-                    <h3 className="text-lg font-medium text-foreground mb-1">
-                      Фото профиля
-                    </h3>
-
-                    <p className="text-sm text-muted-foreground">
-                      JPG, GIF или PNG. Не больше 2 МБ.
-                    </p>
-                  </div>
-                </div>
-
-                <form className="space-y-6">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium text-foreground">
-                        Имя
-                      </label>
-
-                      <input
-                        type="text"
-                        defaultValue="Анна"
-                        className="w-full px-4 py-3 rounded-xl border border-rose-200 bg-white focus:outline-none focus:border-gold focus:ring-1 focus:ring-gold transition-shadow"
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium text-foreground">
-                        Фамилия
-                      </label>
-
-                      <input
-                        type="text"
-                        defaultValue="Смирнова"
-                        className="w-full px-4 py-3 rounded-xl border border-rose-200 bg-white focus:outline-none focus:border-gold focus:ring-1 focus:ring-gold transition-shadow"
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium text-foreground">
-                        Email
-                      </label>
-
-                      <input
-                        type="email"
-                        defaultValue="anna@example.com"
-                        className="w-full px-4 py-3 rounded-xl border border-rose-200 bg-white focus:outline-none focus:border-gold focus:ring-1 focus:ring-gold transition-shadow"
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium text-foreground">
-                        Телефон
-                      </label>
-
-                      <input
-                        type="tel"
-                        defaultValue="+7 (999) 123-45-67"
-                        className="w-full px-4 py-3 rounded-xl border border-rose-200 bg-white focus:outline-none focus:border-gold focus:ring-1 focus:ring-gold transition-shadow"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="pt-4">
-                    <button
-                      type="button"
-                      className="bg-gold text-white font-medium px-8 py-3 rounded-full hover:bg-gold-hover transition-colors shadow-sm"
-                    >
-                      Сохранить изменения
-                    </button>
-                  </div>
-                </form>
-              </div>
+              <ProfileForm user={user} />
             </div>
           )}
         </main>
       </div>
+    </div>
+  )
+}
+
+/** Свой профиль: имя, фамилия, email, телефон и фото — всё сохраняется на сервер */
+function ProfileForm({ user }: { user: UserType }) {
+  const { updateUser } = useAuth()
+  const fromUser = (u: UserType): ProfileData => ({
+    first_name: u.first_name,
+    last_name: u.last_name,
+    email: u.email,
+    phone: u.phone ?? "",
+  })
+  const [values, setValues] = useState<ProfileData>(() => fromUser(user))
+  const [errors, setErrors] = useState<Record<string, string>>({})
+  const [formError, setFormError] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+  const [photoOpen, setPhotoOpen] = useState(false)
+  const name = [user.first_name, user.last_name].filter(Boolean).join(" ") || user.username
+
+  const set = (field: keyof ProfileData) => (e: React.ChangeEvent<HTMLInputElement>) => {
+    setValues({ ...values, [field]: e.target.value })
+    setSaved(false)
+    if (errors[field]) setErrors({ ...errors, [field]: "" })
+  }
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault()
+    const emailError = validators.email(values.email)
+    if (emailError) return setErrors({ email: emailError })
+    setSaving(true)
+    setFormError(null)
+    try {
+      const updated = await authApi.updateMe({ ...values, email: values.email.trim() })
+      updateUser(updated)
+      setValues(fromUser(updated))
+      setSaved(true)
+    } catch (err) {
+      const apiError = toApiError(err)
+      const fields = fieldMessages(apiError)
+      setErrors(fields)
+      if (!Object.keys(fields).some((f) => f in values)) setFormError(apiError.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const field = (key: keyof ProfileData, label: string, type: string, autoComplete: string) => (
+    <div className="space-y-2">
+      <label htmlFor={`profile-${key}`} className="text-sm font-medium text-foreground">
+        {label}
+      </label>
+      <input
+        id={`profile-${key}`}
+        type={type}
+        value={values[key]}
+        onChange={set(key)}
+        autoComplete={autoComplete}
+        aria-invalid={Boolean(errors[key])}
+        className={`w-full px-4 py-3 rounded-xl border bg-white focus:outline-none focus:ring-1 transition-shadow ${
+          errors[key] ? "border-rose-400 focus:border-rose-500 focus:ring-rose-500" : "border-rose-200 focus:border-gold focus:ring-gold"
+        }`}
+      />
+      {errors[key] && <p className="text-sm text-rose-600">{errors[key]}</p>}
+    </div>
+  )
+
+  return (
+    <div className="bg-white border border-rose-100 rounded-3xl p-8 shadow-sm">
+      <div className="flex items-center gap-6 mb-8 pb-8 border-b border-rose-100">
+        <button type="button" onClick={() => setPhotoOpen(true)} aria-label="Изменить фото профиля" className="relative group rounded-full">
+          <Avatar src={user.avatar} name={name} className="size-24 text-3xl font-serif" />
+          <span className="absolute inset-0 rounded-full bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+            <Camera className="size-6 text-white" />
+          </span>
+        </button>
+        <div>
+          <h3 className="text-lg font-medium text-foreground mb-1">Фото профиля</h3>
+          <p className="text-sm text-muted-foreground mb-2">JPG или PNG, до 10 МБ.</p>
+          <button type="button" onClick={() => setPhotoOpen(true)} className="text-sm font-medium text-gold-dark hover:underline">
+            {user.avatar ? "Изменить или удалить" : "Загрузить фото"}
+          </button>
+        </div>
+      </div>
+
+      <form onSubmit={submit} noValidate className="space-y-6">
+        {formError && <ErrorMessage error={formError} />}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {field("first_name", "Имя", "text", "given-name")}
+          {field("last_name", "Фамилия", "text", "family-name")}
+          {field("email", "Email", "email", "email")}
+          {field("phone", "Телефон", "tel", "tel")}
+        </div>
+        <div className="pt-4 flex items-center gap-4">
+          <button
+            type="submit"
+            disabled={saving}
+            className="bg-gold text-white font-medium px-8 py-3 rounded-full hover:bg-gold-hover transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {saving ? "Сохранение…" : "Сохранить изменения"}
+          </button>
+          {saved && <span className="text-sm text-green-700">Сохранено</span>}
+        </div>
+      </form>
+
+      {photoOpen && (
+        <AvatarCropper
+          title="Фото профиля"
+          hasPhoto={Boolean(user.avatar)}
+          onSave={async (blob) => updateUser(await authApi.uploadAvatar(blob))}
+          onDelete={async () => updateUser(await authApi.deleteAvatar())}
+          onClose={() => setPhotoOpen(false)}
+        />
+      )}
     </div>
   )
 }

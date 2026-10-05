@@ -4,8 +4,10 @@ import { employeeApi, type Booking, type CabinetClient } from "@/api/api"
 import { useApi } from "@/api/useApi"
 import { toApiError, type ApiError } from "@/api/client"
 import { formatDate, formatTime } from "@/lib/format"
+import { Avatar } from "../components/Avatar"
 import { ErrorMessage } from "../components/ErrorMessage"
-import { AlertCircle, Calendar, Clock, User } from "lucide-react"
+import { PENDING_CHANGED, StatusBadge, isActiveStatus } from "../components/StatusBadge"
+import { AlertCircle, Calendar, Clock, Star, User } from "lucide-react"
 
 /** ISO datetime -> "10:05" */
 const clock = (iso: string) =>
@@ -24,6 +26,7 @@ export function EmployeePage() {
     try {
       await employeeApi.trackTime(bookingId)
       reload()
+      window.dispatchEvent(new Event(PENDING_CHANGED)) // «Начать» подтверждает запись — обновим счётчик
     } catch (e) {
       setActionError(toApiError(e))
     }
@@ -43,7 +46,7 @@ export function EmployeePage() {
             key={b.id}
             booking={b}
             client={clientById.get(b.client)}
-            canTrack={b.date === data?.today && b.status === "active"}
+            canTrack={b.date === data?.today && isActiveStatus(b.status)}
             onTrack={() => track(b.id)}
           />
         ))}
@@ -52,8 +55,13 @@ export function EmployeePage() {
 
   return (
     <div>
-      <h1 className="text-3xl font-serif text-foreground mb-1">Мой кабинет</h1>
-      <p className="text-muted-foreground mb-8">{data?.employee}</p>
+      <div className="flex items-center gap-4 mb-8">
+        {data && <Avatar src={data.employee_photo} name={data.employee} className="size-16 text-lg" />}
+        <div>
+          <h1 className="text-3xl font-serif text-foreground mb-1">Мой кабинет</h1>
+          <p className="text-muted-foreground">{data?.employee}</p>
+        </div>
+      </div>
 
       <div>
         {loading && !data && <p className="text-muted-foreground">Загрузка…</p>}
@@ -120,13 +128,15 @@ function BookingCard({
   return (
     <div className="bg-white border border-rose-100 rounded-3xl p-6 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
       <div>
-        <div className="flex items-center gap-2 text-gold font-medium mb-1">
+        <div className="flex flex-wrap items-center gap-2 text-gold font-medium mb-1">
           <Calendar className="size-4" /> {formatDate(b.date)} • {formatTime(b.start_time)}–
           {formatTime(b.end_time)}
+          <StatusBadge status={b.status} />
         </div>
         <h3 className="text-xl font-serif text-foreground mb-1">{b.service_name}</h3>
         <p className="text-muted-foreground flex items-center gap-2">
           <User className="size-4" /> {client?.name}
+          {client?.is_regular && <Star className="size-4 fill-gold text-gold shrink-0" aria-label="Постоянный клиент" />}
         </p>
         {client?.note && (
           <p className="mt-3 inline-flex items-center gap-2 px-3 py-1 rounded-full border border-rose-200 bg-rose-50 text-rose-700 text-sm">
@@ -178,7 +188,10 @@ function ClientRow({ client, onSaved }: { client: CabinetClient; onSaved: () => 
     <div className="bg-white border border-rose-100 rounded-3xl p-6 shadow-sm">
       <div className="flex items-center justify-between mb-3">
         <div>
-          <h3 className="text-lg font-serif text-foreground">{client.name}</h3>
+          <h3 className="text-lg font-serif text-foreground flex items-center gap-2">
+            {client.name}
+            {client.is_regular && <Star className="size-4 fill-gold text-gold shrink-0" aria-label="Постоянный клиент" />}
+          </h3>
           {client.phone && <p className="text-sm text-muted-foreground">{client.phone}</p>}
         </div>
         <span className="text-sm text-muted-foreground">Визитов: {client.visits}</span>

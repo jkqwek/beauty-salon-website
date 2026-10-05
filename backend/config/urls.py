@@ -21,7 +21,7 @@ from django.urls import include, path
 from rest_framework.routers import SimpleRouter
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
-from accounts.views import AdminUserViewSet, RegisterView, me
+from accounts.views import AdminUserViewSet, RegisterView, me, me_avatar
 from bookings.views import AdminBookingViewSet, ScheduleViewSet, TimeOffViewSet, salon_load
 
 # панель управления на сайте (только сотрудники)
@@ -40,6 +40,7 @@ urlpatterns = [
     path("api/auth/login/", TokenObtainPairView.as_view(), name="token-obtain-pair"),
     path("api/auth/refresh/", TokenRefreshView.as_view(), name="token-refresh"),
     path("api/auth/me/", me, name="me"),
+    path("api/auth/me/avatar/", me_avatar, name="me-avatar"),
     path("api/admin/load/", salon_load, name="salon-load"),
     path("api/admin/", include(admin_router.urls)),
     

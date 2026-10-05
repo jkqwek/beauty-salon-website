@@ -1,5 +1,5 @@
 import { NavLink, useOutletContext } from "react-router"
-import heroPhoto from "@/imports/image.png"
+import heroPhoto from "@/imports/back.png"
 import photoRostova from "@/imports/Rostova.png"
 import photoLin from "@/imports/lin.png"
 import photoKravtsova from "@/imports/kravchova.png"
@@ -24,29 +24,31 @@ export function HomePage() {
           <ImageWithFallback
             src={heroPhoto}
             alt="Роскошный интерьер салона Allure с мягким светом и элегантной мебелью"
-            className="w-full h-full object-cover blur-sm opacity-80"
+            className="w-full h-full object-cover blur-[2px]"
           />
-          <div className="absolute inset-0 bg-rose-50/70 mix-blend-overlay"></div>
-          <div className="absolute inset-0 bg-gradient-to-t from-pearl via-pearl/40 to-transparent"></div>
+          {/* затемнение под светлый текст: 55% — минимум, при котором весь текст держит контраст WCAG */}
+          <div className="absolute inset-0 bg-black/55"></div>
+          {/* плавный переход в фон страницы только внизу, без засветки всего фото */}
+          <div className="absolute inset-0 bg-gradient-to-t from-pearl to-transparent to-30%"></div>
         </div>
 
         <div className="relative z-10 max-w-4xl mx-auto px-6 text-center">
-          <span className="inline-block px-4 py-1 mb-6 rounded-full border border-gold/30 bg-pearl/60 backdrop-blur-sm text-gold font-medium text-sm tracking-widest uppercase">
+          <span className="inline-block px-4 py-1 mb-6 rounded-full border border-gold/70 text-gold font-medium text-sm tracking-widest uppercase">
             Добро пожаловать в Allure
           </span>
-          <h1 className="text-5xl md:text-7xl font-serif text-foreground mb-6 leading-tight drop-shadow-sm">
+          <h1 className="text-5xl md:text-7xl font-serif text-white mb-6 leading-tight drop-shadow-sm">
             Перезагрузка <br />
             <span className="text-gold-gradient italic">
               за один визит.
             </span>
           </h1>
-          <p className="text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto mb-10 font-medium">
+          <p className="text-lg md:text-xl text-white/90 max-w-2xl mx-auto mb-10 font-medium">
             Погрузитесь в мир изысканного ухода — в спокойном современном
             пространстве, созданном исключительно для вашего благополучия.
           </p>
           <button
             onClick={openBooking}
-            className="gold-gradient text-white px-10 py-4 rounded-full text-lg font-semibold hover:shadow-[0_10px_30px_rgba(212,175,55,0.3)] hover:-translate-y-1 transition-all duration-300"
+            className="bg-gradient-to-br from-gold to-gold-hover hover:brightness-105 text-white px-10 py-4 rounded-full text-lg font-semibold hover:shadow-[0_10px_30px_rgba(212,175,55,0.3)] hover:-translate-y-1 transition-all duration-300"
           >
             Записаться
           </button>

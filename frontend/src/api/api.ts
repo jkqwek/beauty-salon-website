@@ -5,7 +5,20 @@ export interface User {
   username: string
   email: string
   first_name: string
+  last_name: string
+  phone: string | null
+  avatar: string | null
   is_staff: boolean // сотрудник: полные права
+  is_blocked: boolean | null // чёрный список: онлайн-запись недоступна
+}
+
+export type ProfileData = Pick<User, "first_name" | "last_name" | "email"> & { phone: string }
+
+/** Файл (обрезанное фото) для multipart-загрузки */
+const fileForm = (field: string, blob: Blob) => {
+  const form = new FormData()
+  form.append(field, blob, "photo.jpg")
+  return form
 }
 
 export interface Service {
@@ -24,6 +37,7 @@ export interface Employee {
   specialization: string
   photo: string | null
   services: number[]
+  is_active?: boolean // приходит только сотрудникам
 }
 
 export interface Booking {
@@ -35,7 +49,7 @@ export interface Booking {
   date: string // "2026-10-24"
   start_time: string // "10:00:00"
   end_time: string
-  status: "active" | "cancelled" | "completed"
+  status: "pending" | "confirmed" | "completed" | "cancelled"
   client: number
   actual_start: string | null // ISO datetime, тайм-трекинг
   actual_end: string | null
@@ -62,12 +76,18 @@ export const authApi = {
       auth: false,
     }),
   me: () => api<User>("/auth/me/"),
+  updateMe: (data: ProfileData) => api<User>("/auth/me/", { method: "PATCH", body: data }),
+  uploadAvatar: (blob: Blob) => api<User>("/auth/me/avatar/", { method: "PUT", body: fileForm("avatar", blob) }),
+  deleteAvatar: () => api<User>("/auth/me/avatar/", { method: "DELETE" }),
 }
 
 export const catalogApi = {
   services: () => api<Service[]>("/services/"),
   employees: (serviceId?: number) =>
     api<Employee[]>(serviceId ? `/employees/?service=${serviceId}` : "/employees/"),
+  uploadMasterPhoto: (id: number, blob: Blob) =>
+    api<Employee>(`/employees/${id}/photo/`, { method: "PUT", body: fileForm("photo", blob) }),
+  deleteMasterPhoto: (id: number) => api<Employee>(`/employees/${id}/photo/`, { method: "DELETE" }),
 }
 
 export const bookingApi = {
@@ -92,10 +112,12 @@ export interface CabinetClient {
   visits: number
   phone: string
   note: string // внутренний комментарий, клиенту не виден
+  is_regular: boolean // ⭐ постоянный клиент
 }
 
 export interface EmployeeCabinet {
   employee: string
+  employee_photo: string | null
   today: string
   schedule: { day: string; start_time: string; end_time: string }[]
   bookings: Booking[]
@@ -117,7 +139,13 @@ export interface AdminUser {
   last_name: string
   email: string
   phone: string | null
+  avatar: string | null
   is_staff: boolean
+  is_regular: boolean | null // ⭐ ставит сотрудник
+  is_candidate: boolean // подсказка ⭐: часто ходит, но ещё не отмечен
+  is_blocked: boolean | null // чёрный список
+  blocked_reason: string | null
+  blocked_at: string | null
   date_joined: string
   visits: number // по завершённым записям
   last_visit: string | null
@@ -128,12 +156,16 @@ export interface AdminUser {
 
 export interface AdminBooking extends Booking {
   client_name: string
+  client_is_regular: boolean | null
+  client_is_blocked: boolean | null
   price: string | null
 }
 
 export const adminApi = {
   users: () => api<AdminUser[]>("/admin/users/"),
-  bookings: (date: string) => api<AdminBooking[]>(`/admin/bookings/?date=${date}`),
+  bookings: (from: string, to: string) =>
+    api<AdminBooking[]>(`/admin/bookings/?date_from=${from}&date_to=${to}`),
+  pendingCount: () => api<{ count: number }>("/admin/bookings/pending-count/"),
   setBookingStatus: (id: number, status: Booking["status"]) =>
     api<AdminBooking>(`/admin/bookings/${id}/`, { method: "PATCH", body: { status } }),
   load: (date: string) => api<SalonLoad>(`/admin/load/?date=${date}`),

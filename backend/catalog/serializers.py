@@ -1,4 +1,6 @@
 from rest_framework import serializers
+
+from config.images import RelativeImageField
 from .models import Service, Employee
 
 
@@ -19,6 +21,8 @@ class ServiceSerializer(serializers.ModelSerializer):
 
 
 class EmployeeSerializer(serializers.ModelSerializer):
+    photo = RelativeImageField()  # загружается через /employees/<id>/photo/
+
     class Meta:
         model = Employee
         fields = '__all__'
@@ -26,6 +30,8 @@ class EmployeeSerializer(serializers.ModelSerializer):
 
 class EmployeePublicSerializer(serializers.ModelSerializer):
     """Для обычных пользователей: без телефона и привязанного user."""
+    photo = RelativeImageField()
+
     class Meta:
         model = Employee
         fields = ("id", "full_name", "specialization", "photo", "services")

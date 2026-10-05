@@ -18,6 +18,7 @@
 
   --color-gold: #d4af37;
   --color-gold-hover: #e3be47;
+  --color-gold-dark: #8a6a15; /* золото для мелкого текста на светлом фоне: контраст ≥ 4.5 */
 
   --color-pearl: #fcfcfc;
 
@@ -66,12 +67,8 @@ h6,
   font-family: var(--font-serif);
 }
 
-.gold-gradient {
-  background: linear-gradient(135deg, #d4af37, #f3e5ab, #d4af37);
-}
-
 .text-gold-gradient {
-  background: linear-gradient(135deg, #c5a028, #d4af37);
+  background: linear-gradient(135deg, #f3e5ab, #e9cf73); /* светлое золото — для тёмного фона hero */
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
 }

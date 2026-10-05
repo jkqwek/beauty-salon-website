@@ -14,6 +14,7 @@ interface AuthState {
   login: (username: string, password: string) => Promise<void>
   register: (data: RegisterData) => Promise<void>
   logout: () => void
+  updateUser: (user: User) => void // после правки профиля или фото
 }
 
 const AuthContext = createContext<AuthState | null>(null)
@@ -63,7 +64,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, register, logout, updateUser: setUser }}>
       {children}
     </AuthContext.Provider>
   )

@@ -3,7 +3,7 @@ import { catalogApi } from "@/api/api"
 import { useApi } from "@/api/useApi"
 import { masterPhoto } from "@/lib/photos"
 import { ErrorMessage } from "../components/ErrorMessage"
-import { ImageWithFallback } from "../components/ImageWithFallback"
+import { Avatar } from "../components/Avatar"
 import { Star } from "lucide-react"
 import { ShareButtons } from "../components/ShareButtons"
 
@@ -59,10 +59,10 @@ export function MastersPage() {
                 )}
 
                 <div className="size-full rounded-full overflow-hidden bg-rose-100">
-                  <ImageWithFallback
+                  <Avatar
                     src={master.image}
-                    alt={master.name}
-                    className="size-full object-cover group-hover:scale-105 transition-transform duration-700"
+                    name={master.name}
+                    className="size-full text-5xl font-serif group-hover:scale-105 transition-transform duration-700"
                   />
                 </div>
               </div>

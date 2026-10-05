@@ -118,14 +118,15 @@ export async function api<T>(
   path: string,
   { method = "GET", body, auth = true }: RequestOptions = {},
 ): Promise<T> {
+  const isForm = body instanceof FormData // файлы: Content-Type с boundary проставит браузер
   const send = () => {
     const headers: Record<string, string> = { Accept: "application/json" }
-    if (body !== undefined) headers["Content-Type"] = "application/json"
+    if (body !== undefined && !isForm) headers["Content-Type"] = "application/json"
     if (auth && tokens.access) headers.Authorization = `Bearer ${tokens.access}`
     return fetch(`${API_URL}${path}`, {
       method,
       headers,
-      body: body !== undefined ? JSON.stringify(body) : undefined,
+      body: isForm ? body : body !== undefined ? JSON.stringify(body) : undefined,
     })
   }
 

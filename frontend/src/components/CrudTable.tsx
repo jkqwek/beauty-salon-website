@@ -4,9 +4,11 @@ import { api, fieldMessages, toApiError, type ApiError } from "@/api/client"
 import { useApi } from "@/api/useApi"
 import { ErrorMessage } from "./ErrorMessage"
 
-type Value = string | number | boolean | null | number[]
+export type Value = string | number | boolean | null | number[]
 export type Row = { id: number; [key: string]: any }
 export type Option = { value: Value; label: string }
+/** Действия из ячейки: быстро поменять поле строки (⭐ в один клик) или перечитать таблицу */
+export type RowActions = { patch: (data: Record<string, unknown>) => Promise<void>; reload: () => void }
 
 export interface Field {
   name: string
@@ -14,7 +16,7 @@ export interface Field {
   type?: "text" | "number" | "date" | "time" | "textarea" | "checkbox" | "select" | "multiselect"
   options?: Option[]
   default?: Value
-  render?: (row: Row) => ReactNode // своя ячейка таблицы
+  render?: (row: Row, act: RowActions) => ReactNode // своя ячейка таблицы
   inTable?: boolean // false — только в форме
   inForm?: boolean // false — только в таблице
 }
@@ -26,6 +28,8 @@ interface Props {
   canCreate?: boolean
   canDelete?: boolean
   rowClass?: (row: Row) => string
+  filters?: { label: string; test: (row: Row) => boolean }[] // кнопки-фильтры над таблицей
+  beforeSubmit?: (values: Record<string, Value>, row: Row | "new") => boolean // false — не сохранять
 }
 
 export const INPUT =
@@ -90,9 +94,19 @@ function emptyValue(f: Field): Value {
   return ""
 }
 
-export function CrudTable({ title, endpoint, fields, canCreate = true, canDelete = true, rowClass }: Props) {
+export function CrudTable({
+  title,
+  endpoint,
+  fields,
+  canCreate = true,
+  canDelete = true,
+  rowClass,
+  filters = [],
+  beforeSubmit,
+}: Props) {
   const { data, loading, error, reload } = useApi(() => api<Row[]>(endpoint), [endpoint])
   const [query, setQuery] = useState("")
+  const [filter, setFilter] = useState<number | null>(null) // индекс активного фильтра, null — «Все»
   const [sort, setSort] = useState<{ name: string; desc: boolean } | null>(null)
   const [editing, setEditing] = useState<Row | "new" | null>(null)
   const [values, setValues] = useState<Record<string, Value>>({})
@@ -111,7 +125,7 @@ export function CrudTable({ title, endpoint, fields, canCreate = true, canDelete
     fields.map((f) => text(f, row)).join(" ").toLowerCase().includes(q) ||
     (phoneQuery.length >= 3 &&
       fields.some((f) => phoneVariants.some((v) => text(f, row).replace(/\D/g, "").includes(v))))
-  const rows = (data ?? []).filter((row) => !q || matches(row))
+  const rows = (data ?? []).filter((row) => (filter === null || filters[filter].test(row)) && (!q || matches(row)))
   const sortField = fields.find((f) => f.name === sort?.name)
   if (sort && sortField) rows.sort((a, b) => compare(sortValue(sortField, a), sortValue(sortField, b), sort.desc))
   const toggleSort = (name: string) => setSort(sort?.name === name ? { name, desc: !sort.desc } : { name, desc: false })
@@ -132,9 +146,22 @@ export function CrudTable({ title, endpoint, fields, canCreate = true, canDelete
     )
   }
 
+  const rowActions = (row: Row): RowActions => ({
+    reload,
+    patch: async (patch) => {
+      setListError(null)
+      try {
+        await api(`${endpoint}${row.id}/`, { method: "PATCH", body: patch })
+        reload()
+      } catch (err) {
+        setListError(toApiError(err))
+      }
+    },
+  })
+
   const submit = async (e: FormEvent) => {
     e.preventDefault()
-    if (!editing) return
+    if (!editing || (beforeSubmit && !beforeSubmit(values, editing))) return
     setSaving(true)
     setFormError(null)
     try {
@@ -250,10 +277,35 @@ export function CrudTable({ title, endpoint, fields, canCreate = true, canDelete
         </div>
       </div>
 
+      {filters.length > 0 && data && (
+        <div className="flex flex-wrap gap-2 mb-6">
+          {[{ label: "Все", count: data.length, index: null }, ...filters.map((f, index) => ({
+            label: f.label,
+            count: data.filter(f.test).length,
+            index,
+          }))].map((chip) => (
+            <button
+              key={chip.label}
+              onClick={() => setFilter(chip.index)}
+              aria-pressed={filter === chip.index}
+              className={`px-4 py-1.5 rounded-full border text-sm font-medium transition-colors ${
+                filter === chip.index
+                  ? "bg-gold text-white border-gold"
+                  : "bg-white text-muted-foreground border-rose-200 hover:border-gold hover:text-foreground"
+              }`}
+            >
+              {chip.label} <span className="opacity-70">{chip.count}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
       {loading && !data && <p className="text-muted-foreground">Загрузка…</p>}
       {error && <ErrorMessage error={error} onRetry={reload} />}
       {listError && <ErrorMessage error={listError} />}
-      {data && rows.length === 0 && <p className="text-muted-foreground">{q ? "Ничего не найдено." : "Пока пусто."}</p>}
+      {data && rows.length === 0 && (
+        <p className="text-muted-foreground">{q || filter !== null ? "Ничего не найдено." : "Пока пусто."}</p>
+      )}
 
       {rows.length > 0 && (
         <div className="bg-white rounded-3xl border border-rose-100 overflow-x-auto">
@@ -280,7 +332,7 @@ export function CrudTable({ title, endpoint, fields, canCreate = true, canDelete
                 <tr key={row.id} className={`border-t border-rose-50 hover:bg-rose-50/40 transition-colors ${rowClass?.(row) ?? ""}`}>
                   {columns.map((f) => (
                     <td key={f.name} className="p-4 align-top">
-                      {f.render ? f.render(row) : text(f, row)}
+                      {f.render ? f.render(row, rowActions(row)) : text(f, row)}
                     </td>
                   ))}
                   <td className="p-4 text-right whitespace-nowrap">

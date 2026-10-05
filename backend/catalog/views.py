@@ -1,6 +1,11 @@
 from rest_framework import viewsets
+from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
+from rest_framework.parsers import MultiPartParser
 from rest_framework.permissions import AllowAny
+from rest_framework.response import Response
+
+from config.images import delete_image, save_image
 
 from .models import Service, Employee
 from .permissions import IsAdminUser
@@ -39,3 +44,13 @@ class EmployeeViewSet(PublicReadAdminWrite, viewsets.ModelViewSet):
                 raise ValidationError({"service": "Должно быть числом."})
             qs = qs.filter(services__id=service_id)
         return qs
+
+    @action(detail=True, methods=["put", "delete"], parser_classes=[MultiPartParser])
+    def photo(self, request, pk=None):
+        """Фото карточки мастера: PUT — загрузить (поле photo), DELETE — удалить. Только сотрудники."""
+        employee = self.get_object()
+        if request.method == "PUT":
+            save_image(employee, "photo", request.FILES.get("photo"))
+        else:
+            delete_image(employee, "photo")
+        return Response(EmployeeSerializer(employee, context={"request": request}).data)

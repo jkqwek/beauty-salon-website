@@ -5,7 +5,9 @@ from rest_framework import serializers
 
 from catalog.models import Employee, Service
 from .models import Booking, CancellationPolicy, Schedule, TimeOff
-from .services import MAX_DAYS_AHEAD, get_free_slots
+from .services import MAX_DAYS_AHEAD, get_free_slots, slot_taken
+
+BLOCKED_MESSAGE = "Онлайн-запись недоступна. Свяжитесь с салоном."
 
 
 class BookingSerializer(serializers.ModelSerializer):
@@ -35,6 +37,10 @@ class BookingCreateSerializer(serializers.Serializer):
         return value
 
     def validate(self, attrs):
+        profile = getattr(self.context["request"].user, "profile", None)
+        if profile and profile.is_blocked:  # чёрный список: без объяснений, нейтральный текст
+            raise serializers.ValidationError(BLOCKED_MESSAGE)
+
         employee, service = attrs["employee"], attrs["service"]
 
         if not employee.services.filter(pk=service.pk).exists():
@@ -55,19 +61,29 @@ class BookingCreateSerializer(serializers.Serializer):
             date=validated_data["date"],
             start_time=validated_data["start_time"],
             end_time=(start + timedelta(minutes=service.duration_minutes)).time(),
-            status="active",
+            status="pending",  # ждёт подтверждения салоном, но время уже занято
             price=service.price
         )
 
 class AdminBookingSerializer(BookingSerializer):
-    """Запись в панели: видно клиента, менять можно только статус."""
+    """Запись в панели: видно клиента и его метки, менять можно только статус."""
     client_name = serializers.SerializerMethodField()
+    client_is_regular = serializers.BooleanField(source="client.profile.is_regular", read_only=True)
+    client_is_blocked = serializers.BooleanField(source="client.profile.is_blocked", read_only=True)
 
     class Meta(BookingSerializer.Meta):
         read_only_fields = [f.name for f in Booking._meta.fields if f.name != "status"]
 
     def get_client_name(self, b):
         return b.client.get_full_name() or b.client.username
+
+    def validate_status(self, value):
+        b = self.instance
+        if b and b.status == "cancelled" and value != "cancelled" and slot_taken(
+            b.employee_id, b.date, b.start_time, b.end_time, exclude_id=b.pk
+        ):
+            raise serializers.ValidationError("Это время уже занято другой записью.")
+        return value
 
 
 class TimeRangeSerializer(serializers.ModelSerializer):

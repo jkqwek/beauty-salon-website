@@ -5,7 +5,7 @@ import { toApiError, type ApiError } from "@/api/client"
 import { useApi } from "@/api/useApi"
 import { formatDate, formatDuration, formatPrice } from "@/lib/format"
 import { masterPhoto } from "@/lib/photos"
-import { ImageWithFallback } from "./ImageWithFallback"
+import { Avatar } from "./Avatar"
 import { ErrorMessage } from "./ErrorMessage"
 
 interface BookingWizardProps {
@@ -172,6 +172,9 @@ export function BookingWizard({ onClose }: BookingWizardProps) {
                 </div>
               </div>
               <h3 className="text-3xl font-serif text-foreground">Вы записаны!</h3>
+              <p className="text-sm text-yellow-800 bg-yellow-50 border border-yellow-200 rounded-full px-4 py-1">
+                Запись ждёт подтверждения салоном — статус виден в личном кабинете
+              </p>
               <p className="text-muted-foreground">
                 {created.service_name} • {created.employee_name}
                 <br />
@@ -261,11 +264,7 @@ export function BookingWizard({ onClose }: BookingWizardProps) {
                                 {isAny ? (
                                   <span className="font-serif text-sm">Любой</span>
                                 ) : (
-                                  <ImageWithFallback
-                                    src={masterPhoto(m) ?? undefined}
-                                    alt={m.full_name}
-                                    className="size-full object-cover"
-                                  />
+                                  <Avatar src={masterPhoto(m)} name={m.full_name} className="size-full text-base" />
                                 )}
                               </div>
                             </div>

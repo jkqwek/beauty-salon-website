@@ -15,7 +15,7 @@ class ClientProfile(models.Model):
     is_blocked = models.BooleanField("В чёрном списке", default=False)  # запрещает только онлайн-запись
     blocked_reason = models.CharField("Причина блокировки", max_length=200, blank=True)
     blocked_at = models.DateTimeField("Заблокирован", null=True, blank=True)
-
+    telegram_chat_id = models.CharField("Telegram chat_id", max_length=32, blank=True, null=True)
     class Meta:
         verbose_name = "Профиль клиента"
         verbose_name_plural = "Профили клиентов"

@@ -144,3 +144,33 @@ REST_FRAMEWORK = {
 
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
+
+
+# --- Celery и Telegram-бот ---
+import os
+from celery.schedules import crontab
+from dotenv import load_dotenv
+
+load_dotenv(BASE_DIR / ".env")
+
+REDIS_URL = os.getenv("REDIS_URL")
+
+CELERY_BROKER_URL = REDIS_URL
+CELERY_RESULT_BACKEND = REDIS_URL
+CELERY_BROKER_USE_SSL = {"ssl_cert_reqs": "none"}
+CELERY_REDIS_BACKEND_USE_SSL = {"ssl_cert_reqs": "none"}
+
+CELERY_BEAT_SCHEDULE = {
+    "send-daily-reminders": {
+        "task": "telegram_bot.tasks.send_daily_reminders",
+        "schedule": crontab(hour=18, minute=0),
+    },
+    "send-surveys": {
+        "task": "telegram_bot.tasks.send_surveys",
+        "schedule": crontab(minute="*/30"),
+    },
+    "free-windows": {
+        "task": "telegram_bot.tasks.notify_free_windows",
+        "schedule": crontab(hour=20, minute=0),
+    },
+}

@@ -57,6 +57,8 @@ class Booking(models.Model):
     # тайм-трекинг: мастер жмёт "Начать"/"Завершить" в своём кабинете
     actual_start = models.DateTimeField("Фактическое начало", null=True, blank=True)
     actual_end = models.DateTimeField("Фактическое окончание", null=True, blank=True)
+    rating = models.PositiveSmallIntegerField("Оценка клиента", null=True, blank=True)
+    survey_sent = models.BooleanField("Опрос отправлен", default=False)
 
     class Meta:
         verbose_name = "Запись"

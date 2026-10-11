@@ -4,14 +4,35 @@ import {
   Outlet,
   NavLink,
 } from "react-router"
-import { Sparkles, Calendar, User, Menu, X } from "lucide-react"
+import { Sparkles, Calendar, Menu, X, LogOut } from "lucide-react"
 import { useState } from "react"
 import { HomePage } from "./pages/HomePage"
 import { MastersPage } from "./pages/MastersPage"
+import { ServicesPage } from "./pages/ServicesPage"
+import { ProfilePage } from "./pages/ProfilePage"
+import { BookingWizard } from "./components/BookingWizard"
+import { AuthModal } from "./components/AuthModal"
+import { RouteError } from "./components/RouteError"
+import { AuthProvider, useAuth } from "./auth/AuthContext"
+import { PanelLayout, panelRoutes } from "./pages/PanelPage"
+import { BackToTopButton } from "./components/BackToTopButton"
+import { Avatar } from "./components/Avatar"
 
 function Layout() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [bookingOpen, setBookingOpen] = useState(false)
+  const { user, logout } = useAuth()
+  const [authOpen, setAuthOpen] = useState(false)
+  const [resumeBooking, setResumeBooking] = useState(false)
+
+  // Запись только для вошедших: гостю сначала показываем вход
+  const openBooking = () => {
+    if (user) setBookingOpen(true)
+    else {
+      setResumeBooking(true)
+      setAuthOpen(true)
+    }
+  }
 
   return (
     <div className="min-h-screen flex flex-col relative overflow-x-clip bg-pearl text-foreground selection:bg-gold/20 selection:text-gold">
@@ -57,17 +78,52 @@ function Layout() {
             >
               Мастера
             </NavLink>
+            {user?.is_staff && (
+              <NavLink
+                to="/panel"
+                className={({ isActive }) =>
+                  `text-sm font-medium transition-colors hover:text-gold ${
+                    isActive ? "text-gold" : "text-muted-foreground"
+                  }`
+                }
+              >
+                Панель
+              </NavLink>
+            )}
           </nav>
 
           <div className="hidden md:flex items-center gap-4">
-            <NavLink
-              to="/profile"
-              className="p-2 text-muted-foreground hover:text-gold transition-colors"
-            >
-              <User className="size-5" />
-            </NavLink>
+            {user ? (
+              <>
+                <NavLink
+                  to="/profile"
+                  title="Личный кабинет"
+                  className="rounded-full hover:ring-2 hover:ring-gold/40 transition-shadow"
+                >
+                  <Avatar
+                    src={user.avatar}
+                    name={[user.first_name, user.last_name].filter(Boolean).join(" ") || user.username}
+                    className="size-9 text-xs"
+                  />
+                </NavLink>
+                <button
+                  onClick={logout}
+                  title="Выйти"
+                  className="p-2 text-muted-foreground hover:text-gold transition-colors"
+                >
+                  <LogOut className="size-5" />
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={() => setAuthOpen(true)}
+                className="text-sm font-medium text-muted-foreground hover:text-gold transition-colors"
+              >
+                Войти
+              </button>
+            )}
             <button
-              onClick={() => setBookingOpen(true)}
+              onClick={openBooking}
               className="bg-gold hover:bg-gold-hover text-white px-6 py-2.5 rounded-full text-sm font-medium transition-all shadow-sm hover:shadow-md"
             >
               Записаться
@@ -117,9 +173,39 @@ function Layout() {
             >
               Профиль
             </NavLink>
+            {user?.is_staff && (
+              <NavLink
+                to="/panel"
+                onClick={() => setMobileMenuOpen(false)}
+                className="text-lg font-medium text-foreground"
+              >
+                Панель
+              </NavLink>
+            )}
+            {user ? (
+              <button
+                onClick={() => {
+                  logout()
+                  setMobileMenuOpen(false)
+                }}
+                className="text-lg font-medium text-foreground text-left"
+              >
+                Выйти
+              </button>
+            ) : (
+              <button
+                onClick={() => {
+                  setAuthOpen(true)
+                  setMobileMenuOpen(false)
+                }}
+                className="text-lg font-medium text-foreground text-left"
+              >
+                Войти
+              </button>
+            )}
             <button
               onClick={() => {
-                setBookingOpen(true)
+                openBooking()
                 setMobileMenuOpen(false)
               }}
               className="bg-gold text-white px-6 py-3 rounded-full text-center font-medium mt-4"
@@ -131,7 +217,7 @@ function Layout() {
       </header>
 
       <main className="flex-1 flex flex-col">
-        <Outlet context={{ openBooking: () => setBookingOpen(true) }} />
+        <Outlet context={{ openBooking, openAuth: () => setAuthOpen(true) }} />
       </main>
 
       {/* Footer */}
@@ -157,13 +243,40 @@ function Layout() {
 
       {/* Sticky Book Now Button (Mobile primarily, or floating) */}
       <button
-        onClick={() => setBookingOpen(true)}
+        onClick={openBooking}
         className="fixed bottom-6 right-6 md:hidden z-50 bg-gold text-white p-4 rounded-full shadow-lg hover:bg-gold-hover transition-transform hover:scale-105 active:scale-95"
       >
         <Calendar className="size-6" />
       </button>
 
+      {/* Back to top */}
+      <BackToTopButton />
+
       {/* Booking Modal */}
+      {/* чёрный список: говорим сразу, а не на последнем шаге записи */}
+      {bookingOpen &&
+        (user?.is_blocked ? (
+          <BlockedNotice onClose={() => setBookingOpen(false)} />
+        ) : (
+          <BookingWizard onClose={() => setBookingOpen(false)} />
+        ))}
+
+      {/* Auth Modal */}
+      {authOpen && (
+        <AuthModal
+          onClose={() => {
+            setAuthOpen(false)
+            setResumeBooking(false)
+          }}
+          onSuccess={() => {
+            setAuthOpen(false)
+            if (resumeBooking) {
+              setResumeBooking(false)
+              setBookingOpen(true)
+            }
+          }}
+        />
+      )}
     </div>
   )
 }
@@ -172,13 +285,46 @@ const router = createBrowserRouter([
   {
     path: "/",
     Component: Layout,
+    ErrorBoundary: RouteError,
     children: [
       { index: true, Component: HomePage },
+      { path: "services", Component: ServicesPage },
       { path: "masters", Component: MastersPage },
+      { path: "profile", Component: ProfilePage },
+      { path: "panel", Component: PanelLayout, children: panelRoutes },
     ],
   },
 ])
 
 export default function App() {
-  return <RouterProvider router={router} />
+  return (
+    <AuthProvider>
+      <RouterProvider router={router} />
+    </AuthProvider>
+  )
+}
+
+function BlockedNotice({ onClose }: { onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+      <div
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="blocked-title"
+        className="bg-white w-full max-w-sm rounded-[2rem] shadow-2xl p-8 text-center space-y-4"
+      >
+        <h2 id="blocked-title" className="text-2xl font-serif text-foreground">
+          Запись недоступна
+        </h2>
+        <p className="text-muted-foreground">Онлайн-запись недоступна. Свяжитесь с салоном.</p>
+        <button
+          onClick={onClose}
+          autoFocus
+          className="bg-gold hover:bg-gold-hover text-white px-8 py-3 rounded-full font-medium transition-colors"
+        >
+          Понятно
+        </button>
+      </div>
+    </div>
+  )
 }

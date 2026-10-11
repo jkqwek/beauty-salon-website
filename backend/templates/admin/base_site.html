@@ -1,0 +1,38 @@
+{% extends "admin/base.html" %}
+{% load static %}
+{% block extrahead %}
+{{ block.super }}
+<audio id="notify-sound" src="{% static 'admin/notify.mp3' %}" preload="auto"></audio>
+<div id="notify-toast" style="display:none; position:fixed; top:20px; right:20px; z-index:9999;
+     background:#2e7d32; color:#fff; padding:14px 22px; border-radius:8px;
+     font:14px/1.4 sans-serif; box-shadow:0 4px 12px rgba(0,0,0,.3);">
+  Новая онлайн-запись!
+</div>
+<script>
+(function () {
+  var API = "/api/bookings/new-since/";
+  var lastId = parseInt(localStorage.getItem("admin_last_booking_id") || "0", 10);
+  var sound = document.getElementById("notify-sound");
+  var toast = document.getElementById("notify-toast");
+
+  function check() {
+    fetch(API + "?after_id=" + lastId, { credentials: "same-origin" })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (data) {
+        if (!data) return;
+        if (data.count > 0) {
+          sound.play().catch(function (err) { console.log("Play blocked:", err.name, err.message); });
+          toast.style.display = "block";
+          setTimeout(function () { toast.style.display = "none"; }, 4000);
+        }
+        lastId = data.latest_id;
+        localStorage.setItem("admin_last_booking_id", lastId);
+      })
+      .catch(function () {});
+  }
+
+  setInterval(check, 15000);
+  check();
+})();
+</script>
+{% endblock %}

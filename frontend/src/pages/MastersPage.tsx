@@ -1,66 +1,25 @@
 import { useOutletContext } from "react-router"
-import photoRostova from "@/imports/Rostova.png"
-import photoLin from "@/imports/lin.png"
-import photoKravtsova from "@/imports/kravchova.png"
-import photoTarasov from "@/imports/tarasov.png"
-import photoVishnevskaya from "@/imports/vishnevskaya.png"
-import photoKim from "@/imports/kim.png"
-import { ImageWithFallback } from "../components/ImageWithFallback"
+import { catalogApi } from "@/api/api"
+import { useApi } from "@/api/useApi"
+import { masterPhoto } from "@/lib/photos"
+import { ErrorMessage } from "../components/ErrorMessage"
+import { Avatar } from "../components/Avatar"
 import { Star } from "lucide-react"
-
-const MASTERS = [
-  {
-    id: 1,
-    name: "Елена Ростова",
-    role: "Ведущий стилист-колорист",
-    rating: 5.0,
-    quote: "Каждый клиент — холст, а цвет — мой любимый материал.",
-    image: photoRostova,
-  },
-  {
-    id: 2,
-    name: "София Лин",
-    role: "Главный косметолог",
-    rating: 4.9,
-    quote: "Сияющая кожа начинается с глубокого ухода и расслабления.",
-    image: photoLin,
-  },
-  {
-    id: 3,
-    name: "Злата Кравцова",
-    role: "Мастер нейл-арта",
-    rating: 4.9,
-    quote: "Детали создают совершенство, а совершенство — не деталь.",
-    image: photoKravtsova,
-  },
-  {
-    id: 4,
-    name: "Богдан Тарасов",
-    role: "Массажист",
-    rating: 5.0,
-    quote: "Исцеление тела через осознанное прикосновение и энергию.",
-    image: photoTarasov,
-  },
-  {
-    id: 5,
-    name: "Дарина Вишневская",
-    role: "Визажист",
-    rating: 4.8,
-    quote: "Подчёркиваю вашу естественную красоту для любого повода.",
-    image: photoVishnevskaya,
-  },
-  {
-    id: 6,
-    name: "Дэвид Ким",
-    role: "Парикмахер-стилист",
-    rating: 4.9,
-    quote: "Хорошая стрижка меняет взгляд на себя.",
-    image: photoKim,
-  },
-]
+import { ShareButtons } from "../components/ShareButtons"
 
 export function MastersPage() {
   const { openBooking } = useOutletContext<{ openBooking: () => void }>()
+
+  const { data, loading, error, reload } = useApi(() => catalogApi.employees())
+
+  const MASTERS = (data ?? []).map((e) => ({
+    id: e.id,
+    name: e.full_name,
+    role: e.specialization,
+    image: masterPhoto(e) ?? undefined,
+    rating: undefined as number | undefined, // в БД пока нет
+    quote: undefined as string | undefined, // в БД пока нет
+  }))
 
   return (
     <div className="flex-1 bg-pearl pb-24">
@@ -69,6 +28,7 @@ export function MastersPage() {
         <h1 className="text-4xl md:text-5xl font-serif text-foreground mb-4">
           Наши мастера
         </h1>
+
         <p className="text-muted-foreground max-w-2xl mx-auto">
           Команда отобранных вручную экспертов привносит страсть, точность и
           артистизм в каждую процедуру.
@@ -76,6 +36,12 @@ export function MastersPage() {
       </div>
 
       <div className="max-w-7xl mx-auto px-6 pt-16">
+        {loading && (
+          <p className="text-center text-muted-foreground">Загрузка…</p>
+        )}
+
+        {error && <ErrorMessage error={error} onRetry={reload} />}
+
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
           {MASTERS.map((master) => (
             <div
@@ -83,17 +49,20 @@ export function MastersPage() {
               className="flex flex-col items-center bg-white rounded-3xl p-8 border border-rose-100 shadow-sm hover:shadow-xl hover:border-gold/30 transition-all duration-300 group"
             >
               <div className="size-48 rounded-full p-2 border border-gold mb-6 relative">
-                <div className="absolute -top-3 -right-3 bg-white p-2 rounded-full shadow-sm">
-                  <div className="flex items-center gap-1 bg-rose-50 px-3 py-1 rounded-full text-gold font-medium text-sm">
-                    <Star className="size-4 fill-gold text-gold" />
-                    {master.rating}
+                {master.rating && (
+                  <div className="absolute -top-3 -right-3 bg-white p-2 rounded-full shadow-sm">
+                    <div className="flex items-center gap-1 bg-rose-50 px-3 py-1 rounded-full text-gold font-medium text-sm">
+                      <Star className="size-4 fill-gold text-gold" />
+                      {master.rating}
+                    </div>
                   </div>
-                </div>
+                )}
+
                 <div className="size-full rounded-full overflow-hidden bg-rose-100">
-                  <ImageWithFallback
+                  <Avatar
                     src={master.image}
-                    alt={master.name}
-                    className="size-full object-cover group-hover:scale-105 transition-transform duration-700"
+                    name={master.name}
+                    className="size-full text-5xl font-serif group-hover:scale-105 transition-transform duration-700"
                   />
                 </div>
               </div>
@@ -101,13 +70,21 @@ export function MastersPage() {
               <h3 className="text-2xl font-serif text-foreground mb-1">
                 {master.name}
               </h3>
+
               <p className="text-sm font-medium text-gold/80 mb-4">
                 {master.role}
               </p>
 
               <p className="text-muted-foreground text-center text-sm italic mb-8 flex-1">
-                "{master.quote}"
+                {master.quote && `"${master.quote}"`}
               </p>
+
+              <div className="mb-4">
+                <ShareButtons
+                  url={`${window.location.origin}/masters`}
+                  title={master.name}
+                />
+              </div>
 
               <button
                 onClick={openBooking}

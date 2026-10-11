@@ -12,6 +12,8 @@ import {
   UserCircle2,
 } from "lucide-react"
 import { ImageWithFallback } from "../components/ImageWithFallback"
+import { LocationSection } from "../components/LocationSection"
+import { FaqSection } from "../components/FaqSection"
 
 export function HomePage() {
   const { openBooking } = useOutletContext<{ openBooking: () => void }>()
@@ -181,6 +183,12 @@ export function HomePage() {
           </div>
         </div>
       </section>
+
+      {/* FAQ */}
+      <FaqSection />
+
+      {/* Как добраться */}
+      <LocationSection />
     </div>
   )
 }

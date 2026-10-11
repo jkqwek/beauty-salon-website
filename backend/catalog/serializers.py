@@ -34,4 +34,4 @@ class EmployeePublicSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Employee
-        fields = ("id", "full_name", "specialization", "photo", "services")
+        fields = ("id", "full_name", "specialization", "photo", "services", "rating")

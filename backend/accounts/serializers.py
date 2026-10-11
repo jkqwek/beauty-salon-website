@@ -116,3 +116,15 @@ class MeSerializer(serializers.ModelSerializer):
         if profile is not None:
             user.profile, _ = ClientProfile.objects.update_or_create(client=user, defaults=profile)
         return super().update(user, data)
+
+class ChangePasswordSerializer(serializers.Serializer):
+    old_password = serializers.CharField(write_only=True)
+    new_password = serializers.CharField(write_only=True, validators=[validate_password])
+
+class PasswordResetRequestSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+
+class PasswordResetConfirmSerializer(serializers.Serializer):
+    uid = serializers.CharField()
+    token = serializers.CharField()
+    new_password = serializers.CharField(write_only=True, validators=[validate_password])

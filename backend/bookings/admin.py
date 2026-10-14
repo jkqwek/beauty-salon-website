@@ -2,7 +2,7 @@ import csv
 from django.contrib import admin
 from django.http import HttpResponse
 from .models import Schedule, Booking
-from .models import CancellationPolicy, TimeOff
+from .models import CancellationPolicy, Review, SalonClosure, TimeOff
 
 @admin.register(TimeOff)
 class TimeOffAdmin(admin.ModelAdmin):
@@ -46,3 +46,14 @@ class CancellationPolicyAdmin(admin.ModelAdmin):
 
     def has_delete_permission(self, request, obj=None):
         return False
+
+
+@admin.register(SalonClosure)
+class SalonClosureAdmin(admin.ModelAdmin):
+    list_display = ("name", "date_from", "date_to", "open_time", "close_time")
+
+
+@admin.register(Review)
+class ReviewAdmin(admin.ModelAdmin):
+    list_display = ("booking", "status", "created_at")
+    list_filter = ("status",)

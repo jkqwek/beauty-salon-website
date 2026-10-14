@@ -4,7 +4,8 @@ import heroPhoto from "@/imports/image-1.png"
 import detailPhoto from "@/imports/image-1.png"
 import { catalogApi } from "@/api/api"
 import { useApi } from "@/api/useApi"
-import { formatDuration, formatPrice } from "@/lib/format"
+import { formatDuration } from "@/lib/format"
+import { PriceTag } from "../components/PriceTag"
 import { ErrorMessage } from "../components/ErrorMessage"
 import { ImageWithFallback } from "../components/ImageWithFallback"
 import { Clock } from "lucide-react"
@@ -25,7 +26,9 @@ export function ServicesPage() {
     name: s.name,
     desc: s.description,
     time: formatDuration(s.duration_minutes),
-    price: formatPrice(s.price),
+    price: s.price,
+    priceToday: s.price_today,
+    discount: s.discount_percent,
   }))
 
   const filteredServices =
@@ -112,9 +115,12 @@ export function ServicesPage() {
                     {service.name}
                   </h3>
 
-                  <span className="text-xl font-medium text-gold shrink-0">
-                    {service.price}
-                  </span>
+                  <PriceTag
+                    base={service.price}
+                    price={service.priceToday}
+                    discount={service.discount}
+                    className="text-xl font-medium text-gold-dark shrink-0 justify-end"
+                  />
                 </div>
 
                 <p className="text-muted-foreground mb-6 line-clamp-2 md:line-clamp-none">

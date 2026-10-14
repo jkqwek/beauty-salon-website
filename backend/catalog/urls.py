@@ -1,8 +1,10 @@
 from rest_framework.routers import DefaultRouter
-from .views import ServiceViewSet, EmployeeViewSet
+from django.urls import path
+
+from .views import EmployeeViewSet, ServiceViewSet, public_promotions
 
 router = DefaultRouter()
 router.register("services", ServiceViewSet)
 router.register("employees", EmployeeViewSet)
 
-urlpatterns = router.urls
+urlpatterns = router.urls + [path("promotions/", public_promotions, name="public-promotions")]

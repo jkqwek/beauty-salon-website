@@ -11,8 +11,8 @@ from PIL import Image
 from rest_framework.test import APITestCase
 
 from accounts.models import ClientProfile
-from catalog.models import Employee, Service
-from .models import Booking, Schedule, TimeOff
+from catalog.models import Employee, Promotion, Service
+from .models import Booking, CancellationPolicy, SalonClosure, Schedule, TimeOff
 
 User = get_user_model()
 
@@ -186,7 +186,7 @@ class AdminPanelV2Tests(APITestCase):
         self.assertEqual(slots, ["11:00"])
 
         self.client.force_authenticate(self.staff)
-        self.assertEqual(self.client.get("/api/admin/bookings/pending-count/").json(), {"count": 1})
+        self.assertEqual(self.client.get("/api/admin/counters/").json()["pending_bookings"], 1)
         url = f"/api/admin/bookings/{first['id']}/"
         self.assertEqual(self.client.patch(url, {"status": "cancelled"}).json()["status"], "cancelled")
 
@@ -272,3 +272,147 @@ class AdminPanelV2Tests(APITestCase):
             r = self.client.put(photo_url, {"photo": image("JPEG")}, format="multipart")
             self.assertIn("/media/employees/", r.json()["photo"])
             self.assertIsNone(self.client.delete(photo_url).json()["photo"])
+
+
+class SalonV3Tests(APITestCase):
+    """Календарь и праздники, акции, перенос, отзывы, мягкое удаление услуги, статистика дня."""
+
+    def setUp(self):
+        self.staff = User.objects.create_user("boss", password="x", is_staff=True, is_superuser=True)
+        self.master = Employee.objects.create(user=self.staff, full_name="Мастер", specialization="—")
+        self.service = Service.objects.create(name="Стрижка", price=1000, duration_minutes=60)
+        self.master.services.add(self.service)
+        self.buyer = User.objects.create_user("anna", password="x", first_name="Анна", last_name="Смирнова")
+        self.today = timezone.localdate()
+        self.d1, self.d2 = self.today + timedelta(days=1), self.today + timedelta(days=2)
+        for day in (self.d1, self.d2):
+            Schedule.objects.create(employee=self.master, day_of_week=day.weekday(), start_time=time(10), end_time=time(12))
+        CancellationPolicy.objects.update_or_create(pk=1, defaults={"deadline_hours": 0})
+
+    def as_user(self, user):
+        self.client.force_authenticate(User.objects.get(pk=user.pk))
+
+    def book(self, day, at="10:00"):
+        self.as_user(self.buyer)
+        return self.client.post("/api/bookings/", {
+            "employee": self.master.id, "service": self.service.id, "date": str(day), "start_time": at,
+        })
+
+    def booking(self, day, status="confirmed", at=10):
+        return Booking.objects.create(client=self.buyer, employee=self.master, service=self.service, price=1000,
+                                      date=day, start_time=time(at), end_time=time(at + 1), status=status)
+
+    def test_holidays_and_calendar(self):
+        existing = self.booking(self.d1)
+        self.as_user(self.staff)
+        r = self.client.get(f"/api/admin/closures/conflicts/?date_from={self.d1}&date_to={self.d1}").json()
+        self.assertEqual(len(r), 1)  # предупреждение до сохранения: на этот день есть запись
+        self.client.post("/api/admin/closures/", {"name": "Санобработка", "date_from": str(self.d1), "date_to": str(self.d1)})
+        self.client.post("/api/admin/closures/", {"name": "Короткий день", "date_from": str(self.d2),
+                                                  "date_to": str(self.d2), "open_time": "10:00", "close_time": "11:00"})
+        bad = self.client.post("/api/admin/closures/", {"name": "x", "date_from": str(self.d2), "date_to": str(self.d2),
+                                                        "open_time": "10:00"})
+        self.assertEqual(bad.status_code, 400)  # только одно время — ошибка
+        existing.refresh_from_db()
+        self.assertEqual(existing.status, "confirmed")  # записи не отменяются автоматически
+
+        self.as_user(self.buyer)
+        url = lambda day: f"/api/bookings/available-slots/?employee_id={self.master.id}&service_id={self.service.id}&date={day}"
+        self.assertEqual(self.client.get(url(self.d1)).json()["slots"], [])
+        self.assertEqual(self.client.get(url(self.d2)).json()["slots"], ["10:00"])  # сокращённый день
+        self.assertEqual(self.book(self.d1).status_code, 400)
+
+        month = self.d1.strftime("%Y-%m")
+        cal = self.client.get(f"/api/bookings/available-days/?service_id={self.service.id}&month={month}").json()
+        self.assertNotIn(str(self.d1), cal["available"])
+        self.assertEqual(cal["holidays"][str(self.d1)], "Санобработка")
+        if self.d2.month == self.d1.month:
+            self.assertIn(str(self.d2), cal["available"])
+            self.assertEqual(cal["holidays"][str(self.d2)], "Короткий день (с 10:00 до 11:00)")
+        self.assertEqual(len(self.client.get("/api/bookings/closures/upcoming/").json()), 2)  # баннер
+
+    def test_promotions_and_price(self):
+        other = Service.objects.create(name="Маникюр", price=2000, duration_minutes=60)
+        best = Promotion.objects.create(name="Стрижки −20%", discount_percent=20, date_from=self.d1, date_to=self.d2)
+        best.services.add(self.service)
+        Promotion.objects.create(name="Всё −10%", discount_percent=10, date_from=self.d1, date_to=self.d2)  # на все
+
+        price = lambda s, day: self.client.get(f"/api/bookings/price/?service_id={s.id}&date={day}").json()
+        self.assertEqual(price(self.service, self.d1)["price"], "800.00")  # самая выгодная, без суммирования
+        self.assertEqual(price(other, self.d1)["discount_percent"], 10)
+        self.assertEqual(price(self.service, self.today)["price"], "1000.00")  # акция по дате визита
+        self.assertEqual(self.book(self.d1).json()["price"], "800.00")  # цена фиксируется в записи
+
+        services = {s["name"]: s for s in self.client.get("/api/services/").json()}
+        self.assertEqual(services["Стрижка"]["discount_percent"], 0)  # сегодня акции нет
+        promos = self.client.get("/api/promotions/").json()
+        self.assertEqual({p["name"]: p["is_current"] for p in promos}, {"Стрижки −20%": False, "Всё −10%": False})
+
+    def test_reschedule(self):
+        b = self.booking(self.d1)
+        Promotion.objects.create(name="−50%", discount_percent=50, date_from=self.d2, date_to=self.d2)
+        SalonClosure.objects.create(name="Праздник", date_from=self.d2, date_to=self.d2, open_time=time(10), close_time=time(12))
+        self.as_user(self.buyer)
+        url = f"/api/bookings/{b.id}/reschedule/"
+        self.assertEqual(self.client.post(url, {"date": str(self.d1), "start_time": "10:15"}).status_code, 200)  # своё время не мешает
+        self.assertEqual(self.client.post(url, {"date": str(self.d1), "start_time": "13:00"}).status_code, 400)  # вне графика
+        r = self.client.post(url, {"date": str(self.d2), "start_time": "11:00"}).json()
+        self.assertEqual((r["status"], r["price"], r["start_time"]), ("pending", "500.00", "11:00:00"))
+        SalonClosure.objects.filter(date_from=self.d2).update(open_time=None, close_time=None)  # теперь закрыто
+        self.assertEqual(self.client.post(url, {"date": str(self.d2), "start_time": "10:00"}).status_code, 400)
+
+    def test_reviews(self):
+        visit = self.booking(self.today - timedelta(days=3), status="completed")
+        future = self.booking(self.d1)
+        self.as_user(self.buyer)
+        url = f"/api/bookings/{visit.id}/review/"
+        self.assertEqual(self.client.post(f"/api/bookings/{future.id}/review/", {"rating": 5, "text": "Отлично всё"}).status_code, 400)
+        self.assertEqual(self.client.post(url, {"rating": 4, "text": "Коротко"}).status_code, 400)  # < 10 символов
+        r = self.client.post(url, {"rating": 4, "text": "Очень понравилась стрижка"})
+        self.assertEqual((r.status_code, r.json()["review_status"]), (201, "new"))
+        self.assertEqual(self.client.post(url, {"rating": 5, "text": "Ещё один отзыв!"}).status_code, 400)  # один на визит
+        self.master.refresh_from_db()
+        self.assertEqual(self.master.rating, 4)  # оценка сразу в рейтинге
+        self.assertEqual(self.client.get("/api/reviews/").json()["count"], 0)  # текст ждёт модерации
+
+        self.as_user(self.staff)
+        review = self.client.get("/api/admin/reviews/").json()[0]
+        self.client.patch(f"/api/admin/reviews/{review['id']}/", {"status": "published", "reply": "Спасибо!", "text": "взлом"})
+        public = self.client.get(f"/api/reviews/?employee={self.master.id}").json()
+        self.assertEqual((public["average"], public["count"]), (4.0, 1))
+        item = public["results"][0]
+        self.assertEqual((item["author"], item["reply"], item["text"]), ("Анна С.", "Спасибо!", "Очень понравилась стрижка"))
+        master = next(e for e in self.client.get("/api/employees/").json() if e["id"] == self.master.id)
+        self.assertEqual(master["reviews_count"], 1)
+
+    def test_soft_delete_service(self):
+        self.booking(self.d1)
+        self.as_user(self.staff)
+        row = next(s for s in self.client.get("/api/services/").json() if s["id"] == self.service.id)
+        self.assertEqual(row["future_bookings"], 1)  # предупреждение перед удалением
+        self.assertEqual(self.client.delete(f"/api/services/{self.service.id}/").status_code, 204)
+
+        self.assertEqual(Booking.objects.count(), 1)  # записи остались
+        self.assertEqual([s["id"] for s in self.client.get("/api/services/").json()], [])
+        self.assertEqual([s["id"] for s in self.client.get("/api/services/?deleted=1").json()], [self.service.id])
+        master = next(e for e in self.client.get("/api/employees/").json() if e["id"] == self.master.id)
+        self.assertEqual(master["services"], [])  # у мастера удалённая услуга не видна
+        report = self.client.get("/api/bookings/reports/popular-services/").json()
+        self.assertEqual(report[0]["service_name"], "Стрижка (удалена)")
+        self.as_user(self.buyer)
+        self.assertEqual(self.client.get("/api/bookings/my/").json()[0]["service_name"], "Стрижка")  # история цела
+        self.assertEqual(self.book(self.d2).status_code, 400)  # записаться нельзя
+
+        self.as_user(self.staff)
+        self.client.post(f"/api/services/{self.service.id}/restore/")
+        self.assertEqual([s["id"] for s in self.client.get("/api/services/").json()], [self.service.id])
+
+    def test_today_stats_and_counters(self):
+        self.booking(self.today, status="pending", at=10)
+        self.booking(self.today, status="confirmed", at=12)
+        self.booking(self.today, status="cancelled", at=14)
+        self.as_user(self.staff)
+        stats = self.client.get("/api/admin/stats/today/").json()
+        self.assertEqual((stats["total"], stats["by_status"]["cancelled"], stats["expected_revenue"]), (2, 1, "2000.00"))
+        counters = self.client.get("/api/admin/counters/").json()
+        self.assertEqual((counters["today_bookings"], counters["pending_bookings"], counters["new_reviews"]), (2, 1, 0))

@@ -29,6 +29,11 @@ export interface Service {
   duration_minutes: number
   category: string
   is_active: boolean
+  price_today: string // с учётом акции, действующей сегодня
+  discount_percent: number // 0 — акции сегодня нет
+  promotion: string | null
+  deleted_at?: string | null // только в панели: мягкое удаление
+  future_bookings?: number | null // только в панели: предупреждение перед удалением
 }
 
 export interface Employee {
@@ -37,6 +42,8 @@ export interface Employee {
   specialization: string
   photo: string | null
   services: number[]
+  rating?: string | null // средняя оценка клиентов (сайт и бот)
+  reviews_count?: number // опубликованные отзывы
   is_active?: boolean // приходит только сотрудникам
 }
 
@@ -53,7 +60,30 @@ export interface Booking {
   client: number
   actual_start: string | null // ISO datetime, тайм-трекинг
   actual_end: string | null
+  price: string | null
+  rating: number | null // оценка визита (сайт или бот)
+  review_status: ReviewStatus | null // null — отзыва нет
 }
+
+export type ReviewStatus = "new" | "published" | "rejected"
+
+/** Календарь месяца: дни со свободным временем и подписи праздников */
+export interface AvailableDays {
+  available: string[]
+  holidays: Record<string, string>
+}
+
+export interface PriceQuote {
+  price: string
+  base_price: string
+  discount_percent: number
+  promotion: string | null
+}
+
+const query = (params: Record<string, string | number | null | undefined>) =>
+  new URLSearchParams(
+    Object.entries(params).filter(([, v]) => v != null && v !== "").map(([k, v]) => [k, String(v)]),
+  ).toString()
 
 export interface RegisterData {
   username: string
@@ -91,10 +121,22 @@ export const catalogApi = {
 }
 
 export const bookingApi = {
-  slots: (p: { employeeId: number; serviceId: number; date: string }) =>
+  /** bookingId — перенос своей записи: её время не занято, мастер и услуга берутся из неё */
+  slots: (p: { employeeId?: number; serviceId?: number; bookingId?: number; date: string }) =>
     api<{ slots: string[] }>(
-      `/bookings/available-slots/?employee_id=${p.employeeId}&service_id=${p.serviceId}&date=${p.date}`,
+      `/bookings/available-slots/?${query({ employee_id: p.employeeId, service_id: p.serviceId, booking_id: p.bookingId, date: p.date })}`,
     ),
+  availableDays: (p: { serviceId?: number; employeeId?: number | null; bookingId?: number; month: string }) =>
+    api<AvailableDays>(
+      `/bookings/available-days/?${query({ service_id: p.serviceId, employee_id: p.employeeId, booking_id: p.bookingId, month: p.month })}`,
+    ),
+  price: (serviceId: number, date: string) =>
+    api<PriceQuote>(`/bookings/price/?${query({ service_id: serviceId, date })}`),
+  reschedule: (id: number, date: string, start_time: string) =>
+    api<Booking>(`/bookings/${id}/reschedule/`, { method: "POST", body: { date, start_time } }),
+  review: (id: number, data: { rating: number; text: string }) =>
+    api<Booking>(`/bookings/${id}/review/`, { method: "POST", body: data }),
+  upcomingClosures: () => api<Closure[]>("/bookings/closures/upcoming/"),
   create: (data: { employee: number; service: number; date: string; start_time: string }) =>
     api<Booking>("/bookings/", { method: "POST", body: data }),
   my: () => api<Booking[]>("/bookings/my/"),
@@ -165,7 +207,11 @@ export const adminApi = {
   users: () => api<AdminUser[]>("/admin/users/"),
   bookings: (from: string, to: string) =>
     api<AdminBooking[]>(`/admin/bookings/?date_from=${from}&date_to=${to}`),
-  pendingCount: () => api<{ count: number }>("/admin/bookings/pending-count/"),
+  counters: () => api<PanelCounters>("/admin/counters/"),
+  todayStats: () => api<TodayStats>("/admin/stats/today/"),
+  restoreService: (id: number) => api<Service>(`/services/${id}/restore/`, { method: "POST" }),
+  closureConflicts: (p: { date_from: string; date_to: string; open_time?: string | null; close_time?: string | null }) =>
+    api<string[]>(`/admin/closures/conflicts/?${query(p)}`),
   setBookingStatus: (id: number, status: Booking["status"]) =>
     api<AdminBooking>(`/admin/bookings/${id}/`, { method: "PATCH", body: { status } }),
   load: (date: string) => api<SalonLoad>(`/admin/load/?date=${date}`),
@@ -255,4 +301,61 @@ export const financeApi = {
 
   employeeWorkload: (params: DateRangeParams = {}) =>
     api<EmployeeWorkloadRow[]>(`/finance/employee-workload/${toQueryString(params)}`),
+}
+
+export interface PanelCounters {
+  pending_bookings: number
+  new_reviews: number
+  today_bookings: number
+}
+
+export interface TodayStats {
+  date: string
+  total: number // без отменённых
+  by_status: Record<Booking["status"], number>
+  expected_revenue: string
+}
+
+/** Праздник/выходной салона: часы пустые — закрыто, заданы — сокращённый день */
+export interface Closure {
+  name: string
+  date_from: string
+  date_to: string
+  open_time: string | null
+  close_time: string | null
+}
+
+export interface PublicReview {
+  id: number
+  rating: number
+  text: string
+  reply: string
+  created_at: string
+  author: string // «Анна С.»
+  author_avatar: string | null
+  employee_id: number
+  employee_name: string
+  service_name: string
+}
+
+export const reviewsApi = {
+  list: (p: { employee?: number | null; minRating?: number; limit?: number } = {}) =>
+    api<{ average: number | null; count: number; results: PublicReview[] }>(
+      `/reviews/?${query({ employee: p.employee, min_rating: p.minRating, limit: p.limit })}`,
+    ),
+}
+
+export interface Promotion {
+  id: number
+  name: string
+  description: string
+  discount_percent: number
+  date_from: string
+  date_to: string
+  services: string[] // пусто — на все услуги
+  is_current: boolean
+}
+
+export const promotionsApi = {
+  current: () => api<Promotion[]>("/promotions/"),
 }

@@ -17,6 +17,10 @@ export const formatDate = (iso: string) =>
     year: "numeric",
   })
 
+/** "2026-10-24" -> "24 октября" */
+export const formatDayMonth = (iso: string) =>
+  parseDate(iso).toLocaleDateString("ru-RU", { day: "numeric", month: "long" })
+
 /** "2026-10-24" -> "суббота, 24 октября" — заголовок дня в списке */
 export const formatDayHeader = (iso: string) =>
   parseDate(iso).toLocaleDateString("ru-RU", { weekday: "long", day: "numeric", month: "long" })
@@ -58,4 +62,12 @@ export function periodLabel(mode: PeriodMode, [from, to]: [string, string]): str
   if (mode === "day") return formatDate(from)
   if (mode === "month") return parseDate(from).toLocaleDateString("ru-RU", { month: "long", year: "numeric" })
   return `${parseDate(from).toLocaleDateString("ru-RU", { day: "numeric", month: "long" })} – ${formatDate(to)}`
+}
+
+/** 1 отзыв, 2 отзыва, 5 отзывов */
+export const plural = (n: number, [one, few, many]: [string, string, string]) => {
+  const mod10 = n % 10
+  const mod100 = n % 100
+  const word = mod10 === 1 && mod100 !== 11 ? one : mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14) ? few : many
+  return `${n} ${word}`
 }

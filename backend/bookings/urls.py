@@ -10,6 +10,10 @@ from .views import (
     employee_cabinet,
     track_time,
     cancellation_policy,
+    available_days_view,
+    price_view,
+    leave_review,
+    upcoming_closures,
 )
 
 urlpatterns = [
@@ -23,4 +27,8 @@ urlpatterns = [
     path("employee/", employee_cabinet, name="employee-cabinet"),
     path("<int:booking_id>/track-time/", track_time, name="track-time"),
     path("cancellation-policy/", cancellation_policy, name="cancellation-policy"),
+    path("available-days/", available_days_view, name="available-days"),
+    path("price/", price_view, name="booking-price"),
+    path("<int:booking_id>/review/", leave_review, name="leave-review"),
+    path("closures/upcoming/", upcoming_closures, name="upcoming-closures"),
 ]

@@ -84,6 +84,53 @@ class TimeOff(models.Model):
         return f"{self.employee} — {self.date} {self.start_time}-{self.end_time}"
 
 
+class SalonClosure(models.Model):
+    """Праздник или выходной салона на период дат. Часы не заданы — закрыто, заданы — сокращённый день."""
+    name = models.CharField("Название", max_length=100)  # видят клиенты: в календаре и на баннере
+    date_from = models.DateField("С")
+    date_to = models.DateField("По")
+    open_time = models.TimeField("Открыто с", null=True, blank=True)
+    close_time = models.TimeField("Открыто до", null=True, blank=True)
+
+    class Meta:
+        verbose_name = "Праздник или выходной"
+        verbose_name_plural = "Праздники и выходные"
+        ordering = ["date_from"]
+
+    def __str__(self):
+        return f"{self.name}: {self.date_from}–{self.date_to}"
+
+    @property
+    def is_closed(self):
+        return self.open_time is None
+
+    @property
+    def label(self):
+        return self.name if self.is_closed else f"{self.name} (с {self.open_time:%H:%M} до {self.close_time:%H:%M})"
+
+
+class Review(models.Model):
+    """Отзыв о визите. Оценка хранится в Booking.rating (общая с ботом); здесь текст, модерация и ответ салона."""
+    STATUS_CHOICES = [
+        ("new", "На модерации"),
+        ("published", "Опубликован"),
+        ("rejected", "Не опубликован"),
+    ]
+    booking = models.OneToOneField(Booking, on_delete=models.CASCADE, related_name="review")
+    text = models.TextField("Текст")
+    status = models.CharField("Статус", max_length=10, choices=STATUS_CHOICES, default="new")
+    reply = models.TextField("Ответ салона", blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Отзыв"
+        verbose_name_plural = "Отзывы"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.booking.client} — {self.get_status_display()}"
+
+
 class CancellationPolicy(models.Model):
     """Правило отмены: одна строка (pk=1), срок меняется в панели."""
     deadline_hours = models.PositiveIntegerField("Отмена и перенос не позднее чем за, ч", default=24)

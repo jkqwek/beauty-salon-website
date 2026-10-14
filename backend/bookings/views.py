@@ -1,6 +1,7 @@
 from django.shortcuts import render
 # bookings/views.py
 from datetime import datetime, timedelta
+from decimal import Decimal
 
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
@@ -8,14 +9,18 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import mixins, serializers, status, viewsets
 
-from catalog.models import Employee, Service
-from .models import ACTIVE_STATUSES, CancellationPolicy, Schedule, Booking, TimeOff, User
+from catalog.models import Employee, Service, price_on
+from .models import ACTIVE_STATUSES, CancellationPolicy, Review, SalonClosure, Schedule, Booking, TimeOff, User
 from .serializers import (
-    AdminBookingSerializer, BookingCreateSerializer, BookingSerializer, CancellationPolicySerializer,
+    AdminBookingSerializer, AdminReviewSerializer, BookingCreateSerializer, BookingSerializer,
+    CancellationPolicySerializer, PublicReviewSerializer, ReviewCreateSerializer, SalonClosureSerializer,
     ScheduleSerializer, TimeOffSerializer,
 )
-from .services import cancel_deadline_error, get_free_slots, slot_taken
-from django.db.models import Count, F, Q
+from .services import (
+    MAX_DAYS_AHEAD, available_days, cancel_deadline_error, closure_conflicts, closures_between, conflict_label,
+    get_free_slots, recalc_master_rating, reschedule,
+)
+from django.db.models import Avg, Count, F, Q, Sum
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from catalog.permissions import IsAdminUser
@@ -30,26 +35,90 @@ def _int_param(params, name):
     return int(value)
 
 
-@api_view(["GET"])
-@permission_classes([IsAuthenticated])
-def available_slots(request):
-    employee_id = _int_param(request.query_params, "employee_id")
+def _date_param(params, name):
+    value = params.get(name)
+    if not value:
+        raise ValidationError({name: "Обязательный параметр."})
+    return serializers.DateField().run_validation(value)
+
+
+def _own_booking(request):
+    """?booking_id= — своя переносимая запись: её время не считается занятым, услуга берётся из неё."""
+    booking_id = request.query_params.get("booking_id")
+    if not booking_id:
+        return None
+    if not booking_id.isdigit():
+        raise ValidationError({"booking_id": "Должно быть числом."})
+    return get_object_or_404(Booking, pk=booking_id, client=request.user)
+
+
+def _service(request, booking):
+    if booking:
+        return booking.service
     service_id = _int_param(request.query_params, "service_id")
-
-    date_str = request.query_params.get("date")
-    if not date_str:
-        raise ValidationError({"date": "Обязательный параметр."})
     try:
-        target_date = datetime.strptime(date_str, "%Y-%m-%d").date()
-    except ValueError:
-        raise ValidationError({"date": "Дата должна быть в формате ГГГГ-ММ-ДД."})
-
-    try:
-        service = Service.objects.get(pk=service_id, is_active=True)
+        return Service.objects.get(pk=service_id, is_active=True)
     except Service.DoesNotExist:
         raise NotFound("Услуга не найдена.")
 
-    return Response({"slots": get_free_slots(employee_id, service, target_date)})
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def available_slots(request):
+    booking = _own_booking(request)
+    employee_id = booking.employee_id if booking else _int_param(request.query_params, "employee_id")
+    target_date = _date_param(request.query_params, "date")
+    service = _service(request, booking)
+    return Response({"slots": get_free_slots(employee_id, service, target_date,
+                                             exclude_booking_id=booking.pk if booking else None)})
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def available_days_view(request):
+    """Календарь месяца (?month=ГГГГ-ММ): дни со свободным временем и подписи праздников.
+    employee_id не указан — подходит любой мастер, оказывающий услугу."""
+    booking = _own_booking(request)
+    service = _service(request, booking)
+    try:
+        first = datetime.strptime(request.query_params.get("month", ""), "%Y-%m").date()
+    except ValueError:
+        raise ValidationError({"month": "Месяц в формате ГГГГ-ММ."})
+    last = (first.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
+
+    if booking:
+        employee_ids = [booking.employee_id]
+    elif request.query_params.get("employee_id"):
+        employee_ids = [_int_param(request.query_params, "employee_id")]
+    else:
+        employee_ids = list(Employee.objects.filter(is_active=True, services=service).values_list("pk", flat=True))
+
+    today = timezone.localdate()
+    date_from, date_to = max(first, today), min(last, today + timedelta(days=MAX_DAYS_AHEAD))
+    days = available_days(service, employee_ids, date_from, date_to,
+                          exclude_booking_id=booking.pk if booking else None) if date_from <= date_to else []
+
+    holidays = {}
+    for c in closures_between(first, last):
+        day = max(c.date_from, first)
+        while day <= min(c.date_to, last):
+            holidays[str(day)] = c.label
+            day += timedelta(days=1)
+    return Response({"available": [str(d) for d in days], "holidays": holidays})
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def price_view(request):
+    """Цена услуги на дату визита с учётом акций (?service_id=&date=)."""
+    service = get_object_or_404(Service, pk=_int_param(request.query_params, "service_id"))
+    price, promo = price_on(service, _date_param(request.query_params, "date"))
+    return Response({
+        "price": str(price),
+        "base_price": str(service.price),
+        "discount_percent": promo.discount_percent if promo else 0,
+        "promotion": promo.name if promo else None,
+    })
 
 
 @api_view(["POST"])
@@ -64,7 +133,7 @@ def create_booking(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def booking_history(request):
-    bookings = Booking.objects.filter(client=request.user).select_related("service", "employee")
+    bookings = Booking.objects.filter(client=request.user).select_related("service", "employee", "review")
     serializer = BookingSerializer(bookings, many=True)
     return Response(serializer.data)
 
@@ -102,71 +171,27 @@ def cancel_booking(request, booking_id):
 @api_view(["POST", "PATCH"])
 @permission_classes([IsAuthenticated])
 def reschedule_booking(request, booking_id):
+    """Перенос клиентом: только дата и время. Те же проверки, что у новой записи (см. services.reschedule)."""
     try:
-        booking = Booking.objects.get(id=booking_id)
+        booking = Booking.objects.select_related("service").get(id=booking_id)
     except Booking.DoesNotExist:
         return Response({"error": "Запись не найдена"}, status=status.HTTP_404_NOT_FOUND)
-
     if booking.client != request.user:
-        return Response(
-            {"error": "Нельзя перенести чужую запись"},
-            status=status.HTTP_403_FORBIDDEN,
-        )
+        return Response({"error": "Нельзя перенести чужую запись"}, status=status.HTTP_403_FORBIDDEN)
 
-    if booking.status not in ACTIVE_STATUSES:
-        return Response(
-            {"error": "Эту запись уже нельзя перенести (она не активна)"},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
-
-    deadline_error = cancel_deadline_error(booking)
-    if deadline_error:
-        return Response({"error": deadline_error}, status=status.HTTP_400_BAD_REQUEST)
-
-    new_date_str = request.data.get("date")
-    new_start_time_str = request.data.get("start_time")
-
-    if not all([new_date_str, new_start_time_str]):
-        return Response(
-            {"error": "Нужно передать date и start_time"},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
-
-    try:
-        new_date = datetime.strptime(new_date_str, "%Y-%m-%d").date()
-        new_start_time = datetime.strptime(new_start_time_str, "%H:%M").time()
-    except ValueError:
-        return Response(
-            {"error": "Неверный формат даты или времени"},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
-
-    # пересчитываем время окончания по длительности услуги
-    new_start_dt = datetime.combine(new_date, new_start_time)
-    new_end_dt = new_start_dt + timedelta(minutes=booking.service.duration_minutes)
-    new_end_time = new_end_dt.time()
-
-    # повторная проверка занятости — исключаем саму эту запись, иначе конфликт сама с собой
-    if slot_taken(booking.employee_id, new_date, new_start_time, new_end_time, exclude_id=booking.id):
-        return Response(
-            {"error": "Это время уже занято, выберите другой слот"},
-            status=status.HTTP_409_CONFLICT,
-        )
-
-    booking.date = new_date
-    booking.start_time = new_start_time
-    booking.end_time = new_end_time
-    booking.save()
-
-    serializer = BookingSerializer(booking)
-    return Response(serializer.data)
+    new_date = _date_param(request.data, "date")
+    new_start = serializers.TimeField(input_formats=["%H:%M"]).run_validation(request.data.get("start_time"))
+    error = reschedule(booking, new_date, new_start)
+    if error:
+        return Response({"error": error}, status=status.HTTP_400_BAD_REQUEST)
+    return Response(BookingSerializer(booking).data)
 
 @api_view(["GET"])
 @permission_classes([IsAdminUser])
 def popular_services_report(request):
     rows = (
         Booking.objects.exclude(status="cancelled")
-        .values("service_id", "service__name")
+        .values("service_id", "service__name", "service__deleted_at")
         .annotate(bookings_count=Count("id"))
         .annotate(revenue=F("bookings_count") * F("service__price"))
         .order_by("-bookings_count")
@@ -174,7 +199,7 @@ def popular_services_report(request):
     return Response([
         {
             "service_id": r["service_id"],
-            "service_name": r["service__name"],
+            "service_name": r["service__name"] + (" (удалена)" if r["service__deleted_at"] else ""),
             "bookings_count": r["bookings_count"],
             "revenue": str(r["revenue"]),
         }
@@ -272,12 +297,6 @@ class AdminBookingViewSet(mixins.ListModelMixin, mixins.UpdateModelMixin, viewse
                 qs = qs.filter(**{lookup: serializers.DateField().run_validation(value)})
         return qs
 
-    @action(detail=False, url_path="pending-count")
-    def pending_count(self, request):
-        """Сколько будущих записей ждёт подтверждения — счётчик в меню панели."""
-        count = Booking.objects.filter(status="pending", date__gte=timezone.localdate()).count()
-        return Response({"count": count})
-
 
 class ScheduleViewSet(viewsets.ModelViewSet):
     queryset = Schedule.objects.select_related("employee")
@@ -352,4 +371,111 @@ def salon_load(request):
         "hours": list(hours),
         "load": round(100 * busy_sum / available_sum) if available_sum else None,
         "masters": masters,
+    })
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def leave_review(request, booking_id):
+    """Отзыв о своём выполненном визите: один на визит. Оценка сразу идёт в рейтинг мастера,
+    текст публикуется после модерации."""
+    booking = get_object_or_404(Booking.objects.select_related("employee"), pk=booking_id, client=request.user)
+    if booking.status != "completed":
+        raise ValidationError("Отзыв можно оставить только после визита.")
+    if hasattr(booking, "review"):
+        raise ValidationError("Отзыв на этот визит уже оставлен.")
+    data = ReviewCreateSerializer(data=request.data)
+    data.is_valid(raise_exception=True)
+    Review.objects.create(booking=booking, text=data.validated_data["text"])
+    booking.rating = data.validated_data["rating"]  # то же поле, что у оценки из бота
+    booking.save(update_fields=["rating"])
+    recalc_master_rating(booking.employee)
+    return Response(BookingSerializer(booking).data, status=status.HTTP_201_CREATED)
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def public_reviews(request):
+    """Опубликованные отзывы: ?employee= — о мастере, ?min_rating=&limit= — для блока на главной."""
+    qs = Review.objects.filter(status="published").select_related(
+        "booking__client__profile", "booking__employee", "booking__service"
+    )
+    params = request.query_params
+    if params.get("employee"):
+        qs = qs.filter(booking__employee_id=_int_param(params, "employee"))
+    if params.get("min_rating"):
+        qs = qs.filter(booking__rating__gte=_int_param(params, "min_rating"))
+    stats = qs.aggregate(average=Avg("booking__rating"), count=Count("id"))
+    limit = min(_int_param(params, "limit") if params.get("limit") else 200, 200)  # ponytail: без пагинации, 200 свежих
+    return Response({
+        "average": round(stats["average"], 1) if stats["average"] else None,
+        "count": stats["count"],
+        "results": PublicReviewSerializer(qs[:limit], many=True).data,
+    })
+
+
+class AdminReviewViewSet(mixins.ListModelMixin, mixins.UpdateModelMixin, viewsets.GenericViewSet):
+    """Модерация отзывов: статус и ответ салона."""
+    queryset = Review.objects.select_related("booking__client__profile", "booking__employee", "booking__service")
+    serializer_class = AdminReviewSerializer
+    permission_classes = [IsAdminUser]
+
+
+class SalonClosureViewSet(viewsets.ModelViewSet):
+    """Праздники и выходные салона."""
+    queryset = SalonClosure.objects.all()
+    serializer_class = SalonClosureSerializer
+    permission_classes = [IsAdminUser]
+
+    @action(detail=False)
+    def conflicts(self, request):
+        """Предупреждение до сохранения: какие записи попадут на эти дни (?date_from=&date_to=&open_time=&close_time=)."""
+        params = request.query_params
+        date_from, date_to = _date_param(params, "date_from"), _date_param(params, "date_to")
+        time = lambda name: serializers.TimeField().run_validation(params[name]) if params.get(name) else None
+        bookings = closure_conflicts(date_from, date_to, time("open_time"), time("close_time"))
+        return Response([conflict_label(b) for b in bookings])
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def upcoming_closures(request):
+    """Баннер на главной: праздники и сокращённые дни в ближайшие 7 дней."""
+    today = timezone.localdate()
+    closures = SalonClosure.objects.filter(date_to__gte=today, date_from__lte=today + timedelta(days=7))
+    return Response([
+        {"name": c.name, "date_from": c.date_from, "date_to": c.date_to,
+         "open_time": c.open_time, "close_time": c.close_time}
+        for c in closures
+    ])
+
+
+@api_view(["GET"])
+@permission_classes([IsAdminUser])
+def panel_counters(request):
+    """Счётчики панели (опрос раз в минуту): ждут подтверждения, новые отзывы, записей сегодня."""
+    today = timezone.localdate()
+    return Response({
+        "pending_bookings": Booking.objects.filter(status="pending", date__gte=today).count(),
+        "new_reviews": Review.objects.filter(status="new").count(),
+        "today_bookings": Booking.objects.filter(date=today).exclude(status="cancelled").count(),
+    })
+
+
+@api_view(["GET"])
+@permission_classes([IsAdminUser])
+def today_stats(request):
+    """Дашборд «Сегодня»: записи по статусам и ожидаемая выручка (без отменённых)."""
+    today = timezone.localdate()
+    by_status = {code: 0 for code, _ in Booking.STATUS_CHOISES}
+    revenue = Decimal("0.00")
+    for row in Booking.objects.filter(date=today).values("status").annotate(n=Count("id"), total=Sum("price")):
+        by_status[row["status"]] = row["n"]
+        if row["status"] != "cancelled":
+            revenue += row["total"] or 0
+    return Response({
+        "date": today,
+        "total": sum(n for code, n in by_status.items() if code != "cancelled"),
+        "by_status": by_status,
+        "expected_revenue": str(revenue.quantize(Decimal("0.01"))),
     })

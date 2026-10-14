@@ -15,6 +15,7 @@ import { AuthModal } from "./components/AuthModal"
 import { RouteError } from "./components/RouteError"
 import { AuthProvider, useAuth } from "./auth/AuthContext"
 import { PanelLayout, panelRoutes } from "./pages/PanelPage"
+import { ReviewsPage } from "./pages/ReviewsPage"
 import { BackToTopButton } from "./components/BackToTopButton"
 import { Avatar } from "./components/Avatar"
 
@@ -77,6 +78,16 @@ function Layout() {
               }
             >
               Мастера
+            </NavLink>
+            <NavLink
+              to="/reviews"
+              className={({ isActive }) =>
+                `text-sm font-medium transition-colors hover:text-gold ${
+                  isActive ? "text-gold" : "text-muted-foreground"
+                }`
+              }
+            >
+              Отзывы
             </NavLink>
             {user?.is_staff && (
               <NavLink
@@ -165,6 +176,13 @@ function Layout() {
               className="text-lg font-medium text-foreground"
             >
               Мастера
+            </NavLink>
+            <NavLink
+              to="/reviews"
+              onClick={() => setMobileMenuOpen(false)}
+              className="text-lg font-medium text-foreground"
+            >
+              Отзывы
             </NavLink>
             <NavLink
               to="/profile"
@@ -290,6 +308,7 @@ const router = createBrowserRouter([
       { index: true, Component: HomePage },
       { path: "services", Component: ServicesPage },
       { path: "masters", Component: MastersPage },
+      { path: "reviews", Component: ReviewsPage },
       { path: "profile", Component: ProfilePage },
       { path: "panel", Component: PanelLayout, children: panelRoutes },
     ],

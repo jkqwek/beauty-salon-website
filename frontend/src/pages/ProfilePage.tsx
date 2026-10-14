@@ -10,7 +10,14 @@ import { Avatar } from "../components/Avatar"
 import { AvatarCropper } from "../components/AvatarCropper"
 import { ErrorMessage } from "../components/ErrorMessage"
 import { StatusBadge, isActiveStatus } from "../components/StatusBadge"
-import { User, Calendar, Camera, Clock, MoreVertical } from "lucide-react"
+import { RescheduleModal, ReviewModal } from "../components/ClientModals"
+import { User, Calendar, Camera, Clock } from "lucide-react"
+
+const REVIEW_BADGE: Record<NonNullable<Booking["review_status"]>, { label: string; cls: string }> = {
+  new: { label: "Отзыв на модерации", cls: "bg-yellow-50 text-yellow-800 border-yellow-200" },
+  published: { label: "Отзыв опубликован", cls: "bg-green-50 text-green-700 border-green-200" },
+  rejected: { label: "Отзыв не опубликован", cls: "bg-rose-50 text-muted-foreground border-rose-200" },
+}
 
 export function ProfilePage() {
   const [activeTab, setActiveTab] = useState("appointments")
@@ -20,6 +27,8 @@ export function ProfilePage() {
   const bookings = useApi(bookingApi.my, [user?.id])
   const policy = useApi(bookingApi.cancellationPolicy)
   const [cancelError, setCancelError] = useState<ApiError | null>(null)
+  const [rescheduling, setRescheduling] = useState<Booking | null>(null)
+  const [reviewing, setReviewing] = useState<Booking | null>(null)
 
   if (!user) {
     return (
@@ -167,7 +176,10 @@ export function ProfilePage() {
                     </div>
 
                     <div className="flex items-center gap-3">
-                      <button className="px-6 py-2 rounded-full border border-gold text-gold font-medium hover:bg-gold/10 transition-colors">
+                      <button
+                        onClick={() => setRescheduling(b)}
+                        className="px-6 py-2 rounded-full border border-gold text-gold font-medium hover:bg-gold/10 transition-colors"
+                      >
                         Перенести
                       </button>
 
@@ -208,9 +220,22 @@ export function ProfilePage() {
                       <StatusBadge status={visit.status} />
                     </div>
 
-                    <button className="text-muted-foreground hover:text-gold transition-colors p-2">
-                      <MoreVertical className="size-5" />
-                    </button>
+                    {visit.review_status ? (
+                      <span
+                        className={`px-3 py-1 rounded-full border text-xs font-medium whitespace-nowrap ${REVIEW_BADGE[visit.review_status].cls}`}
+                      >
+                        {REVIEW_BADGE[visit.review_status].label}
+                      </span>
+                    ) : (
+                      visit.status === "completed" && (
+                        <button
+                          onClick={() => setReviewing(visit)}
+                          className="px-5 py-2 rounded-full border border-gold text-gold text-sm font-medium hover:bg-gold/10 transition-colors whitespace-nowrap"
+                        >
+                          Оставить отзыв
+                        </button>
+                      )
+                    )}
                   </div>
                 ))}
               </div>
@@ -228,6 +253,27 @@ export function ProfilePage() {
           )}
         </main>
       </div>
+
+      {rescheduling && (
+        <RescheduleModal
+          booking={rescheduling}
+          onClose={() => setRescheduling(null)}
+          onDone={() => {
+            setRescheduling(null)
+            bookings.reload()
+          }}
+        />
+      )}
+      {reviewing && (
+        <ReviewModal
+          booking={reviewing}
+          onClose={() => setReviewing(null)}
+          onDone={() => {
+            setReviewing(null)
+            bookings.reload()
+          }}
+        />
+      )}
     </div>
   )
 }

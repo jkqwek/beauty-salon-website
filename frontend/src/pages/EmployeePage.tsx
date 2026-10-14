@@ -3,10 +3,10 @@ import { useAuth } from "@/auth/AuthContext"
 import { employeeApi, type Booking, type CabinetClient } from "@/api/api"
 import { useApi } from "@/api/useApi"
 import { toApiError, type ApiError } from "@/api/client"
-import { formatDate, formatTime } from "@/lib/format"
+import { formatDate, formatTime, plural } from "@/lib/format"
 import { Avatar } from "../components/Avatar"
 import { ErrorMessage } from "../components/ErrorMessage"
-import { PENDING_CHANGED, StatusBadge, isActiveStatus } from "../components/StatusBadge"
+import { COUNTERS_CHANGED, StatusBadge, isActiveStatus } from "../components/StatusBadge"
 import { AlertCircle, Calendar, Clock, Star, User } from "lucide-react"
 
 /** ISO datetime -> "10:05" */
@@ -26,7 +26,7 @@ export function EmployeePage() {
     try {
       await employeeApi.trackTime(bookingId)
       reload()
-      window.dispatchEvent(new Event(PENDING_CHANGED)) // «Начать» подтверждает запись — обновим счётчик
+      window.dispatchEvent(new Event(COUNTERS_CHANGED)) // «Начать» подтверждает запись — обновим счётчик
     } catch (e) {
       setActionError(toApiError(e))
     }
@@ -59,7 +59,10 @@ export function EmployeePage() {
         {data && <Avatar src={data.employee_photo} name={data.employee} className="size-16 text-lg" />}
         <div>
           <h1 className="text-3xl font-serif text-foreground mb-1">Мой кабинет</h1>
-          <p className="text-muted-foreground">{data?.employee}</p>
+          <p className="text-muted-foreground">
+            {data?.employee}
+            {data && ` · у вас сегодня ${plural(todayBookings.length, ["запись", "записи", "записей"])}`}
+          </p>
         </div>
       </div>
 

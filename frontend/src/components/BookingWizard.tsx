@@ -1,27 +1,18 @@
 import { useEffect, useState } from "react"
-import { X, CheckCircle2, ChevronRight, ChevronLeft } from "lucide-react"
+import { X, CheckCircle2 } from "lucide-react"
 import { bookingApi, catalogApi, type Booking, type Employee, type Service } from "@/api/api"
 import { toApiError, type ApiError } from "@/api/client"
 import { useApi } from "@/api/useApi"
-import { formatDate, formatDuration, formatPrice } from "@/lib/format"
+import { formatDate, formatDuration } from "@/lib/format"
 import { masterPhoto } from "@/lib/photos"
 import { Avatar } from "./Avatar"
+import { BookingCalendar, SlotPicker } from "./BookingCalendar"
 import { ErrorMessage } from "./ErrorMessage"
+import { PriceTag } from "./PriceTag"
 
 interface BookingWizardProps {
   onClose: () => void
 }
-
-const MAX_DAYS_AHEAD = 90 // как MAX_DAYS_AHEAD в backend/bookings/services.py
-
-const pad = (n: number) => String(n).padStart(2, "0")
-// Дату собираем руками: toISOString() переводит в UTC и может сдвинуть день
-const toISO = (y: number, m: number, d: number) => `${y}-${pad(m + 1)}-${pad(d)}` // m: 0..11
-
-const now = new Date()
-const todayISO = toISO(now.getFullYear(), now.getMonth(), now.getDate())
-const maxDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() + MAX_DAYS_AHEAD)
-const maxISO = toISO(maxDate.getFullYear(), maxDate.getMonth(), maxDate.getDate())
 
 export function BookingWizard({ onClose }: BookingWizardProps) {
   const [step, setStep] = useState(1)
@@ -29,7 +20,6 @@ export function BookingWizard({ onClose }: BookingWizardProps) {
   const [master, setMaster] = useState<Employee | "any" | null>(null)
   const [date, setDate] = useState<string | null>(null)
   const [time, setTime] = useState<string | null>(null)
-  const [viewMonth, setViewMonth] = useState(new Date(now.getFullYear(), now.getMonth(), 1))
 
   const [slotMap, setSlotMap] = useState<Record<string, number>>({}) // "10:00" -> id мастера
   const [slotsLoading, setSlotsLoading] = useState(false)
@@ -44,6 +34,11 @@ export function BookingWizard({ onClose }: BookingWizardProps) {
   const employees = useApi(
     () => (service ? catalogApi.employees(service.id) : Promise.resolve([] as Employee[])),
     [service?.id],
+  )
+  // цена на выбранную дату: акции считаются по дате визита
+  const quote = useApi(
+    () => (service && date ? bookingApi.price(service.id, date) : Promise.resolve(null)),
+    [service?.id, date],
   )
 
   // Шаг 3: свободные слоты. Для «Любой мастер» опрашиваем всех подходящих мастеров
@@ -112,14 +107,6 @@ export function BookingWizard({ onClose }: BookingWizardProps) {
       setSubmitting(false)
     }
   }
-
-  // Календарь
-  const year = viewMonth.getFullYear()
-  const month = viewMonth.getMonth()
-  const daysInMonth = new Date(year, month + 1, 0).getDate()
-  const offset = (new Date(year, month, 1).getDay() + 6) % 7 // неделя с понедельника
-  const canGoPrev = viewMonth > new Date(now.getFullYear(), now.getMonth(), 1)
-  const canGoNext = new Date(year, month + 1, 1) <= maxDate
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 bg-black/40 backdrop-blur-sm">
@@ -209,8 +196,9 @@ export function BookingWizard({ onClose }: BookingWizardProps) {
                       <div className="flex items-center justify-between">
                         <div>
                           <h4 className="font-medium text-foreground text-lg">{svc.name}</h4>
-                          <p className="text-sm text-muted-foreground">
-                            {formatDuration(svc.duration_minutes)} • {formatPrice(svc.price)}
+                          <p className="text-sm text-muted-foreground flex flex-wrap items-baseline gap-x-1">
+                            {formatDuration(svc.duration_minutes)} •{" "}
+                            <PriceTag base={svc.price} price={svc.price_today} discount={svc.discount_percent} />
                           </p>
                         </div>
                         <div
@@ -283,62 +271,17 @@ export function BookingWizard({ onClose }: BookingWizardProps) {
                 <div className="space-y-8">
                   <h3 className="text-xl font-serif text-foreground">Выберите дату и время</h3>
 
-                  <div className="bg-white rounded-2xl p-6 border border-rose-100">
-                    <div className="flex items-center justify-between mb-4">
-                      <span className="font-medium text-foreground capitalize">
-                        {viewMonth.toLocaleDateString("ru-RU", { month: "long", year: "numeric" })}
-                      </span>
-                      <div className="flex gap-2">
-                        <button
-                          disabled={!canGoPrev}
-                          onClick={() => setViewMonth(new Date(year, month - 1, 1))}
-                          className="p-1 text-muted-foreground hover:text-foreground disabled:opacity-30"
-                        >
-                          <ChevronLeft className="size-5" />
-                        </button>
-                        <button
-                          disabled={!canGoNext}
-                          onClick={() => setViewMonth(new Date(year, month + 1, 1))}
-                          className="p-1 text-muted-foreground hover:text-foreground disabled:opacity-30"
-                        >
-                          <ChevronRight className="size-5" />
-                        </button>
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-7 gap-1 text-center mb-2">
-                      {["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"].map((d) => (
-                        <span key={d} className="text-xs font-medium text-muted-foreground py-2">
-                          {d}
-                        </span>
-                      ))}
-                      {Array.from({ length: offset }, (_, i) => (
-                        <span key={`blank-${i}`} />
-                      ))}
-                      {Array.from({ length: daysInMonth }, (_, i) => {
-                        const iso = toISO(year, month, i + 1)
-                        const disabled = iso < todayISO || iso > maxISO
-                        return (
-                          <button
-                            key={iso}
-                            disabled={disabled}
-                            onClick={() => {
-                              setDate(iso)
-                              setSubmitError(null)
-                            }}
-                            className={`aspect-square rounded-full flex items-center justify-center text-sm ${
-                              iso === date
-                                ? "bg-gold text-white font-medium"
-                                : disabled
-                                  ? "text-muted-foreground/40 cursor-not-allowed"
-                                  : "hover:bg-rose-50 text-foreground"
-                            }`}
-                          >
-                            {i + 1}
-                          </button>
-                        )
-                      })}
-                    </div>
-                  </div>
+                  {service && master && (
+                    <BookingCalendar
+                      serviceId={service.id}
+                      employeeId={master === "any" ? null : master.id}
+                      value={date}
+                      onChange={(iso) => {
+                        setDate(iso)
+                        setSubmitError(null)
+                      }}
+                    />
+                  )}
 
                   <div>
                     <h4 className="font-medium text-foreground mb-4">Свободное время</h4>
@@ -359,26 +302,16 @@ export function BookingWizard({ onClose }: BookingWizardProps) {
                         На эту дату свободного времени нет — выберите другой день.
                       </p>
                     )}
-                    <div className="flex flex-wrap gap-3">
-                      {date &&
-                        !slotsLoading &&
-                        times.map((t) => (
-                          <button
-                            key={t}
-                            onClick={() => {
-                              setTime(t)
-                              setSubmitError(null)
-                            }}
-                            className={`px-5 py-2.5 rounded-full text-sm font-medium border transition-colors ${
-                              time === t
-                                ? "bg-gold border-gold text-white"
-                                : "bg-white border-gold text-gold hover:bg-gold/10"
-                            }`}
-                          >
-                            {t}
-                          </button>
-                        ))}
-                    </div>
+                    {date && !slotsLoading && (
+                      <SlotPicker
+                        slots={times}
+                        value={time}
+                        onChange={(t) => {
+                          setTime(t)
+                          setSubmitError(null)
+                        }}
+                      />
+                    )}
                   </div>
                 </div>
               )}
@@ -401,10 +334,25 @@ export function BookingWizard({ onClose }: BookingWizardProps) {
                       <span className="text-muted-foreground">Мастер</span>
                       <span className="font-medium text-foreground">{chosenEmployee?.full_name}</span>
                     </div>
-                    <div className="flex justify-between items-center">
+                    <div className="flex justify-between items-center pb-4 border-b border-rose-50">
                       <span className="text-muted-foreground">Дата и время</span>
                       <span className="font-medium text-foreground">
                         {date && formatDate(date)}, {time}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center gap-4">
+                      <span className="text-muted-foreground">Цена</span>
+                      <span className="font-medium text-foreground text-right">
+                        {quote.data ? (
+                          <>
+                            <PriceTag base={quote.data.base_price} price={quote.data.price} discount={quote.data.discount_percent} />
+                            {quote.data.promotion && (
+                              <span className="block text-xs text-muted-foreground font-normal">Акция «{quote.data.promotion}»</span>
+                            )}
+                          </>
+                        ) : (
+                          "…"
+                        )}
                       </span>
                     </div>
                   </div>

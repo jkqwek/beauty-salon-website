@@ -7,8 +7,12 @@ import { ErrorMessage } from "./ErrorMessage"
 export type Value = string | number | boolean | null | number[]
 export type Row = { id: number; [key: string]: any }
 export type Option = { value: Value; label: string }
-/** Действия из ячейки: быстро поменять поле строки (⭐ в один клик) или перечитать таблицу */
-export type RowActions = { patch: (data: Record<string, unknown>) => Promise<void>; reload: () => void }
+/** Действия из ячейки: поменять поле строки (⭐ в один клик), выполнить свой запрос или перечитать таблицу */
+export type RowActions = {
+  patch: (data: Record<string, unknown>) => Promise<void>
+  run: (request: () => Promise<unknown>) => Promise<void> // ошибка — над таблицей, успех — перечитать
+  reload: () => void
+}
 
 export interface Field {
   name: string
@@ -24,12 +28,17 @@ export interface Field {
 interface Props {
   title: string
   endpoint: string // DRF ModelViewSet: GET/POST на endpoint, PATCH/DELETE на endpoint + id/
+  query?: string // параметры только для списка, например "?deleted=1"
   fields: Field[]
   canCreate?: boolean
+  canEdit?: boolean
   canDelete?: boolean
+  deleteConfirm?: (row: Row) => string // свой текст подтверждения удаления
   rowClass?: (row: Row) => string
   filters?: { label: string; test: (row: Row) => boolean }[] // кнопки-фильтры над таблицей
-  beforeSubmit?: (values: Record<string, Value>, row: Row | "new") => boolean // false — не сохранять
+  defaultFilter?: number | null // индекс фильтра, включённого при открытии
+  // false — не сохранять; может спросить сервер (например, какие записи попадут на праздник)
+  beforeSubmit?: (values: Record<string, Value>, row: Row | "new") => boolean | Promise<boolean>
 }
 
 export const INPUT =
@@ -97,16 +106,20 @@ function emptyValue(f: Field): Value {
 export function CrudTable({
   title,
   endpoint,
+  query: listQuery = "",
   fields,
   canCreate = true,
+  canEdit = true,
   canDelete = true,
+  deleteConfirm,
   rowClass,
   filters = [],
+  defaultFilter = null,
   beforeSubmit,
 }: Props) {
-  const { data, loading, error, reload } = useApi(() => api<Row[]>(endpoint), [endpoint])
+  const { data, loading, error, reload } = useApi(() => api<Row[]>(endpoint + listQuery), [endpoint, listQuery])
   const [query, setQuery] = useState("")
-  const [filter, setFilter] = useState<number | null>(null) // индекс активного фильтра, null — «Все»
+  const [filter, setFilter] = useState<number | null>(defaultFilter) // индекс активного фильтра, null — «Все»
   const [sort, setSort] = useState<{ name: string; desc: boolean } | null>(null)
   const [editing, setEditing] = useState<Row | "new" | null>(null)
   const [values, setValues] = useState<Record<string, Value>>({})
@@ -146,27 +159,37 @@ export function CrudTable({
     )
   }
 
+  const run = async (request: () => Promise<unknown>) => {
+    setListError(null)
+    try {
+      await request()
+      reload()
+    } catch (err) {
+      setListError(toApiError(err))
+    }
+  }
   const rowActions = (row: Row): RowActions => ({
     reload,
-    patch: async (patch) => {
-      setListError(null)
-      try {
-        await api(`${endpoint}${row.id}/`, { method: "PATCH", body: patch })
-        reload()
-      } catch (err) {
-        setListError(toApiError(err))
-      }
-    },
+    run,
+    patch: (patch) => run(() => api(`${endpoint}${row.id}/`, { method: "PATCH", body: patch })),
   })
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
-    if (!editing || (beforeSubmit && !beforeSubmit(values, editing))) return
+    if (!editing) return
     setSaving(true)
     setFormError(null)
+    // пустые дата/время/число — это «не задано»: серверу нужен null, а не ""
+    const body = Object.fromEntries(
+      Object.entries(values).map(([name, v]) => {
+        const type = fields.find((f) => f.name === name)?.type
+        return [name, v === "" && (type === "date" || type === "time" || type === "number") ? null : v]
+      }),
+    )
     try {
-      if (editing === "new") await api(endpoint, { method: "POST", body: values })
-      else await api(`${endpoint}${editing.id}/`, { method: "PATCH", body: values })
+      if (beforeSubmit && !(await beforeSubmit(values, editing))) return
+      if (editing === "new") await api(endpoint, { method: "POST", body })
+      else await api(`${endpoint}${editing.id}/`, { method: "PATCH", body })
       setEditing(null)
       reload()
     } catch (err) {
@@ -180,7 +203,7 @@ export function CrudTable({
   }
 
   const remove = async (row: Row) => {
-    if (!confirm("Удалить запись? Это действие нельзя отменить.")) return
+    if (!confirm(deleteConfirm?.(row) ?? "Удалить запись? Это действие нельзя отменить.")) return
     setListError(null)
     try {
       await api(`${endpoint}${row.id}/`, { method: "DELETE" })
@@ -336,9 +359,11 @@ export function CrudTable({
                     </td>
                   ))}
                   <td className="p-4 text-right whitespace-nowrap">
-                    <button onClick={() => open(row)} title="Изменить" className="p-2 rounded-full text-muted-foreground hover:text-gold hover:bg-rose-50 transition-colors">
-                      <Pencil className="size-4" />
-                    </button>
+                    {canEdit && (
+                      <button onClick={() => open(row)} title="Изменить" className="p-2 rounded-full text-muted-foreground hover:text-gold hover:bg-rose-50 transition-colors">
+                        <Pencil className="size-4" />
+                      </button>
+                    )}
                     {canDelete && (
                       <button onClick={() => remove(row)} title="Удалить" className="p-2 rounded-full text-muted-foreground hover:text-rose-600 hover:bg-rose-50 transition-colors">
                         <Trash className="size-4" />

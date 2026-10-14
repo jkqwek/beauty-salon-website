@@ -22,7 +22,11 @@ from rest_framework.routers import SimpleRouter
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 from accounts.views import AdminUserViewSet, RegisterView, me, me_avatar, change_password, password_reset, password_reset_confirm
-from bookings.views import AdminBookingViewSet, ScheduleViewSet, TimeOffViewSet, salon_load
+from bookings.views import (
+    AdminBookingViewSet, AdminReviewViewSet, SalonClosureViewSet, ScheduleViewSet, TimeOffViewSet,
+    panel_counters, public_reviews, salon_load, today_stats,
+)
+from catalog.views import PromotionViewSet
 
 # панель управления на сайте (только сотрудники)
 admin_router = SimpleRouter()
@@ -30,6 +34,9 @@ admin_router.register("users", AdminUserViewSet, basename="admin-users")
 admin_router.register("bookings", AdminBookingViewSet, basename="admin-bookings")
 admin_router.register("schedules", ScheduleViewSet, basename="admin-schedules")
 admin_router.register("time-offs", TimeOffViewSet, basename="admin-time-offs")
+admin_router.register("reviews", AdminReviewViewSet, basename="admin-reviews")
+admin_router.register("closures", SalonClosureViewSet, basename="admin-closures")
+admin_router.register("promotions", PromotionViewSet, basename="admin-promotions")
 
 urlpatterns = [
     path("admin/", admin.site.urls),
@@ -45,6 +52,9 @@ urlpatterns = [
     path("api/auth/password-reset/", password_reset, name="password-reset"),
     path("api/auth/password-reset/confirm/", password_reset_confirm, name="password-reset-confirm"),
     path("api/admin/load/", salon_load, name="salon-load"),
+    path("api/admin/counters/", panel_counters, name="panel-counters"),
+    path("api/admin/stats/today/", today_stats, name="today-stats"),
+    path("api/reviews/", public_reviews, name="public-reviews"),
     path("api/admin/", include(admin_router.urls)),
     
     path("api/finance/", include("finance.urls")),

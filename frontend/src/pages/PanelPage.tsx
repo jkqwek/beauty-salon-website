@@ -1,8 +1,10 @@
 import { useEffect, useState, type FormEvent } from "react"
 import { NavLink, Outlet } from "react-router"
 import {
+  BadgePercent,
   Ban,
   Calendar,
+  CalendarOff,
   CalendarClock,
   CalendarX2,
   Camera,
@@ -11,8 +13,10 @@ import {
   ChevronLeft,
   ChevronRight,
   LayoutGrid,
+  MessageSquareText,
   Package,
   Receipt,
+  RotateCcw,
   Scissors,
   Star,
   User,
@@ -21,7 +25,7 @@ import {
   Wallet,
 } from "lucide-react"
 import { useAuth } from "@/auth/AuthContext"
-import { adminApi, bookingApi, catalogApi, type Booking, type Employee, type SalonLoad } from "@/api/api"
+import { adminApi, bookingApi, catalogApi, type Booking, type Employee, type PanelCounters, type SalonLoad } from "@/api/api"
 import { toApiError, type ApiError } from "@/api/client"
 import { useApi } from "@/api/useApi"
 import {
@@ -31,6 +35,7 @@ import {
   formatTime,
   periodLabel,
   periodRange,
+  plural,
   shiftDate,
   shiftPeriod,
   toIsoDate,
@@ -39,9 +44,11 @@ import {
 import { masterPhoto } from "@/lib/photos"
 import { Avatar } from "../components/Avatar"
 import { AvatarCropper } from "../components/AvatarCropper"
-import { CrudTable, INPUT, downloadCsv, exportButton, type Option, type Row, type RowActions } from "../components/CrudTable"
+import { CrudTable, INPUT, downloadCsv, exportButton, type Option, type Row, type RowActions, type Value } from "../components/CrudTable"
 import { ErrorMessage } from "../components/ErrorMessage"
-import { BOOKING_STATUS, PENDING_CHANGED } from "../components/StatusBadge"
+import { BOOKING_STATUS, COUNTERS_CHANGED } from "../components/StatusBadge"
+import { PriceTag } from "../components/PriceTag"
+import { StarRating } from "../components/StarRating"
 import { EmployeePage } from "./EmployeePage"
 import { DashboardPage } from "./DashboardPage"
 import { FinancePage } from "./FinancePage"
@@ -137,7 +144,7 @@ function BookingsSection() {
     try {
       await adminApi.setBookingStatus(id, status)
       reload()
-      window.dispatchEvent(new Event(PENDING_CHANGED))
+      window.dispatchEvent(new Event(COUNTERS_CHANGED))
     } catch (e) {
       setActionError(toApiError(e))
     }
@@ -522,22 +529,285 @@ function PolicyForm({ initial }: { initial: number }) {
 }
 
 function ServicesSection() {
+  const [deleted, setDeleted] = useState(false)
+  return (
+    <div>
+      <div className="flex flex-wrap gap-2 mb-6">
+        <button onClick={() => setDeleted(false)} aria-pressed={!deleted} className={chipCls(!deleted)}>
+          Действующие
+        </button>
+        <button onClick={() => setDeleted(true)} aria-pressed={deleted} className={chipCls(deleted)}>
+          Удалённые
+        </button>
+      </div>
+      {deleted ? (
+        <CrudTable
+          key="deleted"
+          title="Удалённые услуги"
+          endpoint="/services/"
+          query="?deleted=1"
+          canCreate={false}
+          canEdit={false}
+          canDelete={false}
+          fields={[
+            { name: "name", label: "Название" },
+            { name: "category", label: "Категория" },
+            { name: "price", label: "Цена", render: (r) => formatPrice(r.price) },
+            { name: "deleted_at", label: "Удалена", render: (r) => formatDate(r.deleted_at.slice(0, 10)) },
+            { name: "future_bookings", label: "Будущих записей" },
+            {
+              name: "restore",
+              label: "",
+              inForm: false,
+              render: (r, act) => (
+                <button
+                  onClick={() => act.run(() => adminApi.restoreService(r.id))}
+                  className="inline-flex items-center gap-1 px-3 py-1 rounded-full border border-gold text-gold-dark text-xs font-medium hover:bg-gold/10 transition-colors whitespace-nowrap"
+                >
+                  <RotateCcw className="size-3.5" /> Восстановить
+                </button>
+              ),
+            },
+          ]}
+        />
+      ) : (
+        <CrudTable
+          key="active"
+          title="Услуги"
+          endpoint="/services/"
+          deleteConfirm={(r) =>
+            r.future_bookings
+              ? `У услуги «${r.name}» есть будущие записи: ${r.future_bookings}. Они останутся, но новых записей не будет. Удалить? Восстановить можно в «Удалённых».`
+              : `Удалить услугу «${r.name}»? Восстановить можно в «Удалённых».`
+          }
+          rowClass={(r) => (r.is_active ? "" : "opacity-50")}
+          fields={[
+            { name: "name", label: "Название" },
+            { name: "category", label: "Категория" },
+            {
+              name: "price",
+              label: "Цена",
+              type: "number",
+              render: (r) => <PriceTag base={r.price} price={r.price_today} discount={r.discount_percent} className="whitespace-nowrap" />,
+            },
+            { name: "duration_minutes", label: "Минут", type: "number" },
+            { name: "description", label: "Описание", type: "textarea", inTable: false },
+            { name: "is_active", label: "Активна (снять — временно скрыть)", type: "checkbox", default: true },
+          ]}
+        />
+      )}
+    </div>
+  )
+}
+
+const REVIEW_STATUS: Option[] = [
+  { value: "new", label: "На модерации" },
+  { value: "published", label: "Опубликован" },
+  { value: "rejected", label: "Не опубликован" },
+]
+
+/** Статус отзыва + быстрые кнопки «Опубликовать» / «Отклонить» */
+function ModerationCell({ row, act }: { row: Row; act: RowActions }) {
+  const setStatus = (status: string) =>
+    act.patch({ status }).then(() => window.dispatchEvent(new Event(COUNTERS_CHANGED)))
+  const cls =
+    row.status === "published"
+      ? "bg-green-50 text-green-700 border-green-200"
+      : row.status === "rejected"
+        ? "bg-rose-50 text-muted-foreground border-rose-200"
+        : "bg-yellow-100 text-yellow-800 border-yellow-300"
+  return (
+    <div className="flex flex-col items-start gap-2">
+      {badge(REVIEW_STATUS.find((s) => s.value === row.status)!.label, cls)}
+      <div className="flex flex-col items-start gap-1.5">
+        {row.status !== "published" && (
+          <button onClick={() => setStatus("published")} className="px-3 py-1 rounded-full bg-green-600 hover:bg-green-700 text-white text-xs font-medium whitespace-nowrap">
+            Опубликовать
+          </button>
+        )}
+        {row.status !== "rejected" && (
+          <button onClick={() => setStatus("rejected")} className="px-3 py-1 rounded-full border border-rose-200 text-rose-600 hover:bg-rose-50 text-xs font-medium whitespace-nowrap">
+            Отклонить
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function ReviewsSection() {
   return (
     <CrudTable
-      title="Услуги"
-      endpoint="/services/"
-      canDelete={false} // удаление каскадом удалит записи — вместо этого снимаем "Активна"
-      rowClass={(r) => (r.is_active ? "" : "opacity-50")}
+      title="Отзывы"
+      endpoint="/admin/reviews/"
+      canCreate={false}
+      canDelete={false}
+      defaultFilter={0}
+      filters={[
+        { label: "Новые", test: (r) => r.status === "new" },
+        { label: "Опубликованные", test: (r) => r.status === "published" },
+        { label: "Отклонённые", test: (r) => r.status === "rejected" },
+      ]}
+      fields={[
+        { name: "created_at", label: "Дата", inForm: false, render: (r) => formatDate(r.created_at.slice(0, 10)) },
+        {
+          name: "client_name",
+          label: "Клиент",
+          inForm: false,
+          render: (r) => (
+            <div className="min-w-32">
+              <p className="font-medium">{r.client_name}</p>
+              <p className="text-xs text-muted-foreground">на сайте: {r.author}</p>
+            </div>
+          ),
+        },
+        { name: "rating", label: "Оценка", inForm: false, render: (r) => <StarRating value={r.rating} /> },
+        {
+          name: "employee_name",
+          label: "Мастер",
+          inForm: false,
+          render: (r) => (
+            <div>
+              {r.employee_name}
+              <p className="text-xs text-muted-foreground">{r.service_name}</p>
+            </div>
+          ),
+        },
+        { name: "text", label: "Текст", inForm: false, render: (r) => <p className="min-w-48 max-w-xs whitespace-pre-line">{r.text}</p> },
+        { name: "status", label: "Статус", type: "select", options: REVIEW_STATUS, render: (r, act) => <ModerationCell row={r} act={act} /> },
+        {
+          name: "reply",
+          label: "Ответ салона (виден под отзывом)",
+          type: "textarea",
+          render: (r) => (r.reply ? <p className="min-w-48 text-sm text-muted-foreground whitespace-pre-line">{r.reply}</p> : "—"),
+        },
+      ]}
+    />
+  )
+}
+
+function ClosuresSection() {
+  const today = toIsoDate(new Date())
+  // предупреждение до сохранения: какие записи попадут на эти дни (решает сотрудник, автоотмены нет)
+  const checkConflicts = async (v: Record<string, Value>) => {
+    if (!v.date_from || !v.date_to) return true // пусть сервер сам скажет, что даты обязательны
+    const conflicts = await adminApi.closureConflicts({
+      date_from: String(v.date_from),
+      date_to: String(v.date_to),
+      open_time: v.open_time ? String(v.open_time) : null,
+      close_time: v.close_time ? String(v.close_time) : null,
+    })
+    if (!conflicts.length) return true
+    const list = conflicts.slice(0, 15).join("\n") + (conflicts.length > 15 ? `\n…и ещё ${conflicts.length - 15}` : "")
+    return confirm(
+      `На эти дни есть записи (${conflicts.length}):\n\n${list}\n\n` +
+        "Они не отменятся сами — решите, что с ними делать, в разделе «Записи». Сохранить?",
+    )
+  }
+  return (
+    <div>
+      <p className="text-muted-foreground mb-6 max-w-2xl">
+        Часы не заданы — салон закрыт весь день. Заданы — сокращённый день. Клиенты видят название в календаре записи,
+        а за 7 дней — баннер на главной. Бот и сайт сами перестают предлагать это время.
+      </p>
+      <CrudTable
+        title="Праздники и выходные"
+        endpoint="/admin/closures/"
+        beforeSubmit={checkConflicts}
+        rowClass={(r) => (r.date_to < today ? "opacity-50" : "")}
+        fields={[
+          { name: "name", label: "Название (видят клиенты)" },
+          { name: "date_from", label: "С", type: "date", render: (r) => formatDate(r.date_from) },
+          { name: "date_to", label: "По", type: "date", render: (r) => formatDate(r.date_to) },
+          {
+            name: "open_time",
+            label: "Открыто с",
+            type: "time",
+            render: (r) =>
+              r.open_time
+                ? `${formatTime(r.open_time)}–${formatTime(r.close_time)}`
+                : badge("закрыто", "bg-red-50 text-red-700 border-red-200"),
+          },
+          { name: "close_time", label: "Открыто до", type: "time", inTable: false },
+          {
+            name: "conflicts",
+            label: "Записи на эти дни",
+            inForm: false,
+            render: (r) =>
+              r.conflicts.length ? (
+                <details>
+                  <summary className="cursor-pointer text-yellow-800 whitespace-nowrap">⚠ {r.conflicts.length} зап.</summary>
+                  <ul className="mt-2 text-xs space-y-1 min-w-64">
+                    {r.conflicts.map((c: string) => (
+                      <li key={c}>{c}</li>
+                    ))}
+                  </ul>
+                </details>
+              ) : (
+                <span className="text-muted-foreground">—</span>
+              ),
+          },
+        ]}
+      />
+    </div>
+  )
+}
+
+function PromotionsAdminSection() {
+  const services = useApi(catalogApi.services)
+  if (!services.data) return <Loader q={services} />
+  const today = toIsoDate(new Date())
+  return (
+    <CrudTable
+      title="Акции"
+      endpoint="/admin/promotions/"
+      rowClass={(r) => (!r.is_active || r.date_to < today ? "opacity-50" : "")}
       fields={[
         { name: "name", label: "Название" },
-        { name: "category", label: "Категория" },
-        { name: "price", label: "Цена", type: "number", render: (r) => formatPrice(r.price) },
-        { name: "duration_minutes", label: "Минут", type: "number" },
+        {
+          name: "discount_percent",
+          label: "Скидка, %",
+          type: "number",
+          render: (r) => badge(`−${r.discount_percent}%`, "bg-rose-600 text-white border-rose-600"),
+        },
+        {
+          name: "services",
+          label: "Услуги (ничего не выбрано — на все)",
+          type: "multiselect",
+          options: services.data.map((s) => ({ value: s.id, label: s.name })),
+          render: (r) =>
+            r.services.length
+              ? services.data!.filter((s) => r.services.includes(s.id)).map((s) => s.name).join(", ")
+              : "Все услуги",
+        },
+        { name: "date_from", label: "С", type: "date", default: today, render: (r) => formatDate(r.date_from) },
+        { name: "date_to", label: "По", type: "date", render: (r) => formatDate(r.date_to) },
         { name: "description", label: "Описание", type: "textarea", inTable: false },
         { name: "is_active", label: "Активна", type: "checkbox", default: true },
       ]}
     />
   )
+}
+
+/** Счётчики панели: ждут подтверждения, новые отзывы, записей сегодня — раз в минуту и сразу после действий */
+function useCounters(enabled: boolean) {
+  const [counters, setCounters] = useState<PanelCounters | null>(null)
+  useEffect(() => {
+    if (!enabled) return
+    const load = () =>
+      adminApi
+        .counters()
+        .then(setCounters)
+        .catch(() => {})
+    load()
+    const timer = setInterval(load, 60_000)
+    window.addEventListener(COUNTERS_CHANGED, load)
+    return () => {
+      clearInterval(timer)
+      window.removeEventListener(COUNTERS_CHANGED, load)
+    }
+  }, [enabled])
+  return counters
 }
 
 /** Фото карточки мастера: клик — загрузить и обрезать / удалить */
@@ -562,27 +832,6 @@ function MasterPhotoCell({ row, act }: { row: Row; act: RowActions }) {
       )}
     </>
   )
-}
-
-/** Сколько записей ждут подтверждения — счётчик у «Записей» в меню */
-function usePendingCount(enabled: boolean) {
-  const [count, setCount] = useState(0)
-  useEffect(() => {
-    if (!enabled) return
-    const load = () =>
-      adminApi
-        .pendingCount()
-        .then((r) => setCount(r.count))
-        .catch(() => {})
-    load()
-    const timer = setInterval(load, 60_000)
-    window.addEventListener(PENDING_CHANGED, load)
-    return () => {
-      clearInterval(timer)
-      window.removeEventListener(PENDING_CHANGED, load)
-    }
-  }, [enabled])
-  return count
 }
 
 function MastersSection() {
@@ -618,7 +867,7 @@ function ScheduleSection() {
   if (!options) return <Loader q={masters} />
   return (
     <CrudTable
-      title="График работы"
+      title="График мастеров"
       endpoint="/admin/schedules/"
       fields={[
         { name: "employee", label: "Мастер", type: "select", options },
@@ -703,10 +952,13 @@ const SECTIONS = [
   { path: "load", label: "Загрузка", icon: LayoutGrid, Component: LoadSection },
   { path: "cabinet", label: "Мой кабинет", icon: User, Component: EmployeePage },
   { path: "clients", label: "Клиенты", icon: Users, Component: ClientsSection },
+  { path: "reviews", label: "Отзывы", icon: MessageSquareText, Component: ReviewsSection },
   { path: "services", label: "Услуги", icon: Scissors, Component: ServicesSection },
   { path: "masters", label: "Мастера", icon: UserCog, Component: MastersSection },
-  { path: "schedule", label: "График", icon: CalendarClock, Component: ScheduleSection },
+  { path: "schedule", label: "График мастеров", icon: CalendarClock, Component: ScheduleSection },
   { path: "time-off", label: "Блокировки", icon: Ban, Component: TimeOffSection },
+  { path: "closures", label: "Праздники и выходные", icon: CalendarOff, Component: ClosuresSection },
+  { path: "promotions", label: "Акции", icon: BadgePercent, Component: PromotionsAdminSection },
   { path: "cancellation", label: "Правила отмены", icon: CalendarX2, Component: PolicySection },
   { path: "stock", label: "Склад", icon: Package, Component: StockSection },
   { path: "expenses", label: "Расходы", icon: Receipt, Component: ExpensesSection },
@@ -720,7 +972,11 @@ export const panelRoutes = SECTIONS.map(({ path, Component }) =>
 
 export function PanelLayout() {
   const { user, loading } = useAuth()
-  const pending = usePendingCount(Boolean(user?.is_staff))
+  const counters = useCounters(Boolean(user?.is_staff))
+  const badges: Record<string, { count?: number; title: string }> = {
+    "": { count: counters?.pending_bookings, title: "ждут подтверждения" },
+    reviews: { count: counters?.new_reviews, title: "новых отзывов" },
+  }
 
   if (!user?.is_staff) {
     return (
@@ -737,6 +993,11 @@ export function PanelLayout() {
           <p className="hidden md:block px-4 mb-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">
             Панель управления
           </p>
+          {counters && (
+            <NavLink to="/panel" end className="block mb-3 px-4 py-2 rounded-2xl bg-white border border-rose-100 text-sm text-muted-foreground hover:border-gold transition-colors">
+              Сегодня: <span className="font-semibold text-foreground">{plural(counters.today_bookings, ["запись", "записи", "записей"])}</span>
+            </NavLink>
+          )}
           <nav className="md:sticky md:top-28 bg-white rounded-3xl border border-rose-100 p-2 flex md:flex-col gap-1 overflow-x-auto">
             {SECTIONS.map(({ path, label, icon: Icon }) => (
               <NavLink
@@ -750,13 +1011,13 @@ export function PanelLayout() {
                 }
               >
                 <Icon className="size-4 shrink-0" /> {label}
-                {path === "" && pending > 0 && (
+                {!!badges[path]?.count && (
                   <span
-                    title="Ждут подтверждения"
-                    aria-label={`ждут подтверждения: ${pending}`}
+                    title={badges[path].title}
+                    aria-label={`${badges[path].title}: ${badges[path].count}`}
                     className="ml-auto min-w-6 px-2 py-0.5 rounded-full bg-yellow-400 text-yellow-950 text-xs font-semibold text-center"
                   >
-                    {pending}
+                    {badges[path].count}
                   </span>
                 )}
               </NavLink>

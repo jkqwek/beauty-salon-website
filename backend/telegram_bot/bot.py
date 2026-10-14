@@ -22,7 +22,6 @@ django.setup()
 
 from asgiref.sync import sync_to_async
 from django.contrib.auth import get_user_model
-from django.db.models import Avg
 from django.utils import timezone
 from telegram import InlineKeyboardButton as Btn, InlineKeyboardMarkup, Update
 from telegram.ext import (ApplicationBuilder, CallbackQueryHandler, CommandHandler,
@@ -31,8 +30,9 @@ from telegram.ext import (ApplicationBuilder, CallbackQueryHandler, CommandHandl
 from accounts.models import ClientProfile
 from bookings.models import ACTIVE_STATUSES, Booking
 from bookings.serializers import BLOCKED_MESSAGE
-from bookings.services import MAX_DAYS_AHEAD, cancel_deadline_error, get_free_slots, slot_taken
-from catalog.models import Employee, Service
+from bookings.services import (MAX_DAYS_AHEAD, available_days, cancel_deadline_error, get_free_slots,
+                               recalc_master_rating, reschedule)
+from catalog.models import Employee, Service, price_on
 
 User = get_user_model()
 DAYS_SHOWN = min(7, MAX_DAYS_AHEAD + 1)
@@ -64,24 +64,46 @@ def db_user(chat_id):
     return p.client if p else None
 
 
+def with_today_price(service):
+    """Цена на сегодня с учётом акции — для прайса и кнопок (как на странице «Услуги»)."""
+    service.price_now, promo = price_on(service, timezone.localdate())
+    service.discount = promo.discount_percent if promo else 0
+    return service
+
+
+def price_text(s, html=True):
+    if not s.discount:
+        return f"{s.price:g} ₽"
+    old = f"<s>{s.price:g}</s> " if html else ""
+    return f"{old}{s.price_now:g} ₽ (−{s.discount}%)"
+
+
 def db_price():
     out = {}
     for s in Service.objects.filter(is_active=True).order_by("category", "name"):
-        out.setdefault(s.category or "Прочее", []).append(s)
+        out.setdefault(s.category or "Прочее", []).append(with_today_price(s))
     return out
 
 
 def db_services():
-    return list(Service.objects.filter(is_active=True).order_by("name"))
+    return [with_today_price(s) for s in Service.objects.filter(is_active=True).order_by("name")]
 
 
 def db_employees(service_id):
     return list(Employee.objects.filter(is_active=True, services__id=service_id))
 
 
-def db_slots(employee_id, service_id, day):
+def db_slots(employee_id, service_id, day, exclude_booking_id=None):
     service = Service.objects.get(pk=service_id)
-    return get_free_slots(int(employee_id), service, day)
+    return get_free_slots(int(employee_id), service, day, exclude_booking_id=exclude_booking_id)
+
+
+def db_days(employee_id, service_id, exclude_booking_id=None):
+    """Ближайшие дни, где у мастера есть свободное время: праздники и занятые дни бот не предлагает."""
+    service = Service.all_objects.get(pk=service_id)  # перенос записи на удалённую услугу тоже работает
+    today = timezone.localdate()
+    return available_days(service, [int(employee_id)], today, today + timedelta(days=DAYS_SHOWN - 1),
+                          exclude_booking_id=exclude_booking_id)
 
 
 def db_create(user, employee_id, service_id, day, hhmm):
@@ -98,7 +120,7 @@ def db_create(user, employee_id, service_id, day, hhmm):
     booking = Booking.objects.create(  # сигнал post_save сам уведомит админа и мастера
         client=user, employee=employee, service=service, date=day,
         start_time=start.time(), end_time=(start + timedelta(minutes=service.duration_minutes)).time(),
-        status="pending", price=service.price,
+        status="pending", price=price_on(service, day)[0],  # со скидкой по дате визита
     )
     return booking, None
 
@@ -129,19 +151,16 @@ def db_cancel(user, booking_id):
 
 
 def db_reschedule(user, booking_id, day, hhmm):
+    """Те же правила, что на сайте: проверки как у новой записи, снова ждёт подтверждения, цена по новой дате."""
     b = db_get_booking(user, booking_id)
-    if not b or b.status not in ACTIVE_STATUSES:
-        return "Запись не найдена или не активна."
-    err = cancel_deadline_error(b)
-    if err:
-        return err
-    start = datetime.combine(day, datetime.strptime(hhmm, "%H%M").time())
-    end = (start + timedelta(minutes=b.service.duration_minutes)).time()
-    if slot_taken(b.employee_id, day, start.time(), end, exclude_id=b.pk):
-        return "Это время уже занято, выберите другое."
-    b.date, b.start_time, b.end_time = day, start.time(), end
-    b.save()
-    return f"Запись перенесена на {day:%d.%m} в {start:%H:%M} ✅"
+    if not b:
+        return "Запись не найдена."
+    start = datetime.strptime(hhmm, "%H%M").time()
+    error = reschedule(b, day, start)
+    if error:
+        return error
+    return (f"Запись перенесена на {day:%d.%m} в {start:%H:%M} ✅\n"
+            f"Цена: {b.price:g} ₽\nЗапись снова ждёт подтверждения салоном.")
 
 
 def db_rate(user, booking_id, rating):
@@ -150,9 +169,7 @@ def db_rate(user, booking_id, rating):
         return "Запись не найдена."
     b.rating = rating
     b.save(update_fields=["rating"])
-    avg = Booking.objects.filter(employee=b.employee, rating__isnull=False).aggregate(a=Avg("rating"))["a"]
-    b.employee.rating = round(avg, 1)  # рейтинг мастера = среднее по оценкам клиентов
-    b.employee.save(update_fields=["rating"])
+    recalc_master_rating(b.employee)  # общий рейтинг с отзывами на сайте
     return "Спасибо за оценку! 💛"
 
 
@@ -201,9 +218,7 @@ async def need_user(update: Update):
     return user
 
 
-def days_buttons(prefix):
-    today = timezone.localdate()
-    days = [today + timedelta(days=i) for i in range(DAYS_SHOWN)]
+def days_buttons(prefix, days):
     return chunk([(f"{d:%d.%m}", f"{prefix}:{d:%Y%m%d}") for d in days], 4)
 
 
@@ -241,7 +256,7 @@ async def price(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = "💰 <b>Прайс-лист</b>\n"
     for cat, services in groups.items():
         text += f"\n<b>{cat}</b>\n" + "\n".join(
-            f"• {s.name} — {s.price:g} ₽ ({s.duration_minutes} мин)" for s in services) + "\n"
+            f"• {s.name} — {price_text(s)} ({s.duration_minutes} мин)" for s in services) + "\n"
     await update.message.reply_text(text, parse_mode="HTML")
 
 
@@ -257,7 +272,8 @@ async def book(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await need_user(update):
         return
     services = await run(db_services)
-    await say(update, "Выберите услугу:", kb([[(f"{s.name} — {s.price:g} ₽", f"bs:{s.id}")] for s in services]))
+    await say(update, "Выберите услугу:",
+              kb([[(f"{s.name} — {price_text(s, html=False)}", f"bs:{s.id}")] for s in services]))
 
 
 async def book_service(update, context):
@@ -270,7 +286,10 @@ async def book_service(update, context):
 
 async def book_employee(update, context):
     _, sid, eid = update.callback_query.data.split(":")
-    await say(update, "Выберите дату:", kb(days_buttons(f"bd:{sid}:{eid}")))
+    days = await run(db_days, eid, sid)
+    if not days:
+        return await say(update, "На ближайшую неделю у мастера нет свободного времени. Попробуйте другого: /book")
+    await say(update, "Выберите дату:", kb(days_buttons(f"bd:{sid}:{eid}", days)))
 
 
 async def book_day(update, context):
@@ -326,7 +345,16 @@ async def noop(update, context):
 
 async def resched_start(update, context):
     bid = update.callback_query.data.split(":")[1]
-    await say(update, "Выберите новую дату:", kb(days_buttons(f"rd:{bid}")))
+    user = await need_user(update)
+    if not user:
+        return
+    b = await run(db_get_booking, user, bid)
+    if not b:
+        return await say(update, "Запись не найдена.")
+    days = await run(db_days, b.employee_id, b.service_id, b.pk)
+    if not days:
+        return await say(update, "На ближайшую неделю свободного времени нет. Свяжитесь с салоном: /contact")
+    await say(update, "Выберите новую дату:", kb(days_buttons(f"rd:{bid}", days)))
 
 
 async def resched_day(update, context):
@@ -337,7 +365,7 @@ async def resched_day(update, context):
     b = await run(db_get_booking, user, bid)
     if not b:
         return await say(update, "Запись не найдена.")
-    slots = await run(db_slots, b.employee_id, b.service_id, parse_day(day))
+    slots = await run(db_slots, b.employee_id, b.service_id, parse_day(day), b.pk)
     if not slots:
         return await say(update, "На эту дату нет свободного времени. Попробуйте другую: /my_bookings")
     await say(update, "Выберите новое время:", kb(slots_buttons(f"rt:{bid}:{day}", slots)))

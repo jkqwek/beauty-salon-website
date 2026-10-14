@@ -14,12 +14,15 @@ import {
 import { ImageWithFallback } from "../components/ImageWithFallback"
 import { LocationSection } from "../components/LocationSection"
 import { FaqSection } from "../components/FaqSection"
+import { ClosureBanner, PromotionsSection, ReviewsPreview } from "../components/HomeBlocks"
 
 export function HomePage() {
   const { openBooking } = useOutletContext<{ openBooking: () => void }>()
 
   return (
     <div className="flex flex-col flex-1">
+      <ClosureBanner />
+
       {/* Hero Section */}
       <section className="relative min-h-[85vh] flex items-center justify-center overflow-hidden">
         <div className="absolute inset-0 z-0">
@@ -56,6 +59,8 @@ export function HomePage() {
           </button>
         </div>
       </section>
+
+      <PromotionsSection onBook={openBooking} />
 
       {/* Services Preview */}
       <section className="py-24 bg-pearl relative">
@@ -183,6 +188,8 @@ export function HomePage() {
           </div>
         </div>
       </section>
+
+      <ReviewsPreview />
 
       {/* FAQ */}
       <FaqSection />

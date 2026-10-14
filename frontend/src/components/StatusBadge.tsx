@@ -14,8 +14,8 @@ export const BOOKING_STATUS: Record<Status, { label: string; cls: string; icon: 
 /** Запись ещё впереди: её можно отменить, она занимает время мастера */
 export const isActiveStatus = (s: Status) => s === "pending" || s === "confirmed"
 
-/** Событие «число ожидающих подтверждения изменилось» — счётчик в меню панели обновится сразу */
-export const PENDING_CHANGED = "panel:pending-changed"
+/** Событие «счётчики панели изменились» (ждут подтверждения, новые отзывы) — меню обновится сразу */
+export const COUNTERS_CHANGED = "panel:counters-changed"
 
 export function StatusBadge({ status }: { status: Status }) {
   const { label, cls, icon: Icon } = BOOKING_STATUS[status]

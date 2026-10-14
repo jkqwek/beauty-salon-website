@@ -1,4 +1,4 @@
-import { useOutletContext } from "react-router"
+import { NavLink, useOutletContext } from "react-router"
 import { catalogApi } from "@/api/api"
 import { useApi } from "@/api/useApi"
 import { masterPhoto } from "@/lib/photos"
@@ -17,7 +17,8 @@ export function MastersPage() {
     name: e.full_name,
     role: e.specialization,
     image: masterPhoto(e) ?? undefined,
-    rating: undefined as number | undefined, // в БД пока нет
+    rating: e.rating ? Number(e.rating) : undefined, // средняя оценка клиентов (сайт и бот)
+    reviews: e.reviews_count ?? 0,
     quote: undefined as string | undefined, // в БД пока нет
   }))
 
@@ -71,9 +72,17 @@ export function MastersPage() {
                 {master.name}
               </h3>
 
-              <p className="text-sm font-medium text-gold/80 mb-4">
+              <p className="text-sm font-medium text-gold/80 mb-2">
                 {master.role}
               </p>
+
+              {master.reviews > 0 ? (
+                <NavLink to={`/reviews?master=${master.id}`} className="text-sm text-gold-dark hover:underline mb-4">
+                  Отзывы ({master.reviews})
+                </NavLink>
+              ) : (
+                <span className="mb-4" />
+              )}
 
               <p className="text-muted-foreground text-center text-sm italic mb-8 flex-1">
                 {master.quote && `"${master.quote}"`}

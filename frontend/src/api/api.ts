@@ -8,16 +8,16 @@ export interface User {
   last_name: string
   phone: string | null
   avatar: string | null
-  is_staff: boolean // сотрудник: полные права
-  is_blocked: boolean | null // чёрный список: онлайн-запись недоступна
+  is_staff: boolean
+  is_blocked: boolean | null
 }
 
 export type ProfileData = Pick<User, "first_name" | "last_name" | "email"> & { phone: string }
 
 /** Файл (обрезанное фото) для multipart-загрузки */
-const fileForm = (field: string, blob: Blob) => {
+const fileForm = (field: string, blob: Blob, filename = "photo.jpg") => {
   const form = new FormData()
-  form.append(field, blob, "photo.jpg")
+  form.append(field, blob, filename)
   return form
 }
 
@@ -25,15 +25,16 @@ export interface Service {
   id: number
   name: string
   description: string
-  price: string // Django отдаёт Decimal строкой: "4500.00"
+  price: string
   duration_minutes: number
   category: string
+  image: string | null          // <-- новое поле
   is_active: boolean
-  price_today: string // с учётом акции, действующей сегодня
-  discount_percent: number // 0 — акции сегодня нет
+  price_today: string
+  discount_percent: number
   promotion: string | null
-  deleted_at?: string | null // только в панели: мягкое удаление
-  future_bookings?: number | null // только в панели: предупреждение перед удалением
+  deleted_at?: string | null
+  future_bookings?: number | null
 }
 
 export interface Employee {
@@ -42,9 +43,9 @@ export interface Employee {
   specialization: string
   photo: string | null
   services: number[]
-  rating?: string | null // средняя оценка клиентов (сайт и бот)
-  reviews_count?: number // опубликованные отзывы
-  is_active?: boolean // приходит только сотрудникам
+  rating?: string | null
+  reviews_count?: number
+  is_active?: boolean
 }
 
 export interface Booking {
@@ -53,21 +54,20 @@ export interface Booking {
   employee_name: string
   service: number
   service_name: string
-  date: string // "2026-10-24"
-  start_time: string // "10:00:00"
+  date: string
+  start_time: string
   end_time: string
   status: "pending" | "confirmed" | "completed" | "cancelled"
   client: number
-  actual_start: string | null // ISO datetime, тайм-трекинг
+  actual_start: string | null
   actual_end: string | null
   price: string | null
-  rating: number | null // оценка визита (сайт или бот)
-  review_status: ReviewStatus | null // null — отзыва нет
+  rating: number | null
+  review_status: ReviewStatus | null
 }
 
 export type ReviewStatus = "new" | "published" | "rejected"
 
-/** Календарь месяца: дни со свободным временем и подписи праздников */
 export interface AvailableDays {
   available: string[]
   holidays: Record<string, string>
@@ -115,13 +115,21 @@ export const catalogApi = {
   services: () => api<Service[]>("/services/"),
   employees: (serviceId?: number) =>
     api<Employee[]>(serviceId ? `/employees/?service=${serviceId}` : "/employees/"),
+
+  // --- Услуги: фото ---
+  uploadServiceImage: (id: number, blob: Blob) =>
+    api<Service>(`/services/${id}/image/`, { method: "PUT", body: fileForm("image", blob, "service.jpg") }),
+  deleteServiceImage: (id: number) =>
+    api<Service>(`/services/${id}/image/`, { method: "DELETE" }),
+
+  // --- Мастера: фото ---
   uploadMasterPhoto: (id: number, blob: Blob) =>
     api<Employee>(`/employees/${id}/photo/`, { method: "PUT", body: fileForm("photo", blob) }),
-  deleteMasterPhoto: (id: number) => api<Employee>(`/employees/${id}/photo/`, { method: "DELETE" }),
+  deleteMasterPhoto: (id: number) =>
+    api<Employee>(`/employees/${id}/photo/`, { method: "DELETE" }),
 }
 
 export const bookingApi = {
-  /** bookingId — перенос своей записи: её время не занято, мастер и услуга берутся из неё */
   slots: (p: { employeeId?: number; serviceId?: number; bookingId?: number; date: string }) =>
     api<{ slots: string[] }>(
       `/bookings/available-slots/?${query({ employee_id: p.employeeId, service_id: p.serviceId, booking_id: p.bookingId, date: p.date })}`,
@@ -145,7 +153,7 @@ export const bookingApi = {
 }
 
 export interface CancellationPolicy {
-  deadline_hours: number // отмена и перенос не позднее чем за N часов
+  deadline_hours: number
 }
 
 export interface CabinetClient {
@@ -153,8 +161,8 @@ export interface CabinetClient {
   name: string
   visits: number
   phone: string
-  note: string // внутренний комментарий, клиенту не виден
-  is_regular: boolean // ⭐ постоянный клиент
+  note: string
+  is_regular: boolean
 }
 
 export interface EmployeeCabinet {
@@ -183,17 +191,17 @@ export interface AdminUser {
   phone: string | null
   avatar: string | null
   is_staff: boolean
-  is_regular: boolean | null // ⭐ ставит сотрудник
-  is_candidate: boolean // подсказка ⭐: часто ходит, но ещё не отмечен
-  is_blocked: boolean | null // чёрный список
+  is_regular: boolean | null
+  is_candidate: boolean
+  is_blocked: boolean | null
   blocked_reason: string | null
   blocked_at: string | null
   date_joined: string
-  visits: number // по завершённым записям
+  visits: number
   last_visit: string | null
   total_spent: string | null
   note: string | null
-  master: string | null // карточка мастера, к которой привязан аккаунт
+  master: string | null
 }
 
 export interface AdminBooking extends Booking {
@@ -219,15 +227,14 @@ export const adminApi = {
     api<CancellationPolicy>("/bookings/cancellation-policy/", { method: "PATCH", body: data }),
 }
 
-/** Карта занятости: минуты в каждом часе дня */
 export interface SalonLoad {
   date: string
   hours: number[]
-  load: number | null // % занятости салона
+  load: number | null
   masters: {
     id: number
     name: string
-    load: number | null // null — выходной
+    load: number | null
     cells: { hour: number; work: number; busy: number; blocked: number }[]
   }[]
 }
@@ -278,7 +285,7 @@ interface DateRangeParams {
   date_to?: string
 }
 
-function toQueryString(params:object) {
+function toQueryString(params: object) {
   const entries = Object.entries(params).filter(([, v]) => v !== undefined) as [string, string][]
   const qs = new URLSearchParams(entries).toString()
   return qs ? `?${qs}` : ""
@@ -311,12 +318,11 @@ export interface PanelCounters {
 
 export interface TodayStats {
   date: string
-  total: number // без отменённых
+  total: number
   by_status: Record<Booking["status"], number>
   expected_revenue: string
 }
 
-/** Праздник/выходной салона: часы пустые — закрыто, заданы — сокращённый день */
 export interface Closure {
   name: string
   date_from: string
@@ -331,7 +337,7 @@ export interface PublicReview {
   text: string
   reply: string
   created_at: string
-  author: string // «Анна С.»
+  author: string
   author_avatar: string | null
   employee_id: number
   employee_name: string
@@ -352,7 +358,7 @@ export interface Promotion {
   discount_percent: number
   date_from: string
   date_to: string
-  services: string[] // пусто — на все услуги
+  services: string[]
   is_current: boolean
 }
 

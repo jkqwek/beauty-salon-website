@@ -41,7 +41,7 @@ class ServiceViewSet(PublicReadAdminWrite, viewsets.ModelViewSet):
         ).order_by("name")
 
     def perform_destroy(self, service):
-        service.deleted_at = timezone.now()  # записи и отчёты остаются, услуга пропадает с сайта и из бота
+        service.deleted_at = timezone.now()
         service.save(update_fields=["deleted_at"])
 
     @action(detail=True, methods=["post"])
@@ -50,6 +50,16 @@ class ServiceViewSet(PublicReadAdminWrite, viewsets.ModelViewSet):
         service.deleted_at = None
         service.save(update_fields=["deleted_at"])
         return Response(self.get_serializer(service).data)
+
+    @action(detail=True, methods=["put", "delete"], parser_classes=[MultiPartParser])
+    def image(self, request, pk=None):
+        """Картинка услуги: PUT — загрузить (поле image), DELETE — удалить. Только сотрудники."""
+        service = self.get_object()
+        if request.method == "PUT":
+            save_image(service, "image", request.FILES.get("image"))
+        else:
+            delete_image(service, "image")
+        return Response(ServiceSerializer(service, context={"request": request}).data)
 
 
 class EmployeeViewSet(PublicReadAdminWrite, viewsets.ModelViewSet):
@@ -64,18 +74,18 @@ class EmployeeViewSet(PublicReadAdminWrite, viewsets.ModelViewSet):
         ))
         if not self.request.user.is_staff:
             qs = qs.filter(is_active=True)
-        service_id = self.request.query_params.get("service")  # /api/employees/?service=3
+        service_id = self.request.query_params.get("service")
         if service_id:
             if not service_id.isdigit():
                 raise ValidationError({"service": "Должно быть числом."})
             qs = qs.filter(services__id=service_id)
-        min_rating = self.request.query_params.get("min_rating")  # ?min_rating=4.5
+        min_rating = self.request.query_params.get("min_rating")
         if min_rating:
             try:
                 qs = qs.filter(rating__gte=Decimal(min_rating))
             except InvalidOperation:
                 raise ValidationError({"min_rating": "Должно быть числом."})
-        if self.request.query_params.get("sort") == "rating":  # ?sort=rating
+        if self.request.query_params.get("sort") == "rating":
             qs = qs.order_by("-rating")
         return qs
 
@@ -113,7 +123,7 @@ def public_promotions(request):
             "discount_percent": p.discount_percent,
             "date_from": p.date_from,
             "date_to": p.date_to,
-            "services": [s.name for s in p.services.all()],  # пусто — на все услуги
+            "services": [s.name for s in p.services.all()],
             "is_current": p.date_from <= today,
         }
         for p in promos

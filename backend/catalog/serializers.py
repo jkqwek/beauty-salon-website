@@ -6,7 +6,8 @@ from .models import Employee, Promotion, Service, price_on
 
 
 class ServiceSerializer(serializers.ModelSerializer):
-    future_bookings = serializers.SerializerMethodField()  # для предупреждения перед удалением (только в панели)
+    image = RelativeImageField()  # <-- URL картинки услуги
+    future_bookings = serializers.SerializerMethodField()
 
     class Meta:
         model = Service
@@ -17,7 +18,6 @@ class ServiceSerializer(serializers.ModelSerializer):
         return getattr(service, "future_bookings", None)
 
     def to_representation(self, service):
-        """Плюс цена на сегодня: страница «Услуги» показывает скидку, если акция действует сегодня."""
         data = super().to_representation(service)
         price, promo = price_on(service, timezone.localdate())
         data.update(
@@ -39,14 +39,14 @@ class ServiceSerializer(serializers.ModelSerializer):
 
 
 class ReviewsCountMixin(serializers.Serializer):
-    reviews_count = serializers.SerializerMethodField()  # опубликованные отзывы — ссылка «Отзывы (N)»
+    reviews_count = serializers.SerializerMethodField()
 
     def get_reviews_count(self, employee):
         return getattr(employee, "reviews_count", 0)
 
 
 class EmployeeSerializer(ReviewsCountMixin, serializers.ModelSerializer):
-    photo = RelativeImageField()  # загружается через /employees/<id>/photo/
+    photo = RelativeImageField()
 
     class Meta:
         model = Employee

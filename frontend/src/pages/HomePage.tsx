@@ -1,23 +1,120 @@
+import { useEffect, useState } from "react"
 import { NavLink, useOutletContext } from "react-router"
 import heroPhoto from "@/imports/back.png"
-import photoRostova from "@/imports/Rostova.png"
-import photoLin from "@/imports/lin.png"
-import photoKravtsova from "@/imports/kravchova.png"
-import photoTarasov from "@/imports/tarasov.png"
 import {
   ArrowRight,
   Droplets,
   Scissors,
   Sparkles,
   UserCircle2,
+  type LucideIcon,
 } from "lucide-react"
 import { ImageWithFallback } from "../components/ImageWithFallback"
 import { LocationSection } from "../components/LocationSection"
 import { FaqSection } from "../components/FaqSection"
-import { ClosureBanner, PromotionsSection, ReviewsPreview } from "../components/HomeBlocks"
+import {
+  ClosureBanner,
+  PromotionsSection,
+  ReviewsPreview,
+} from "../components/HomeBlocks"
+
+// --- Типы (подправьте под реальные поля сериализаторов) ---
+type Service = {
+  id: number
+  name: string
+  description?: string | null
+  category?: string | null
+  image?: string | null
+}
+
+type Master = {
+  id: number
+  name?: string | null
+  full_name?: string | null
+  role?: string | null
+  position?: string | null
+  specialization?: string | null
+  photo?: string | null
+  image?: string | null
+}
+
+// --- Вспомогательные функции ---
+
+// DRF может вернуть либо массив, либо { count, next, previous, results: [...] }
+function unwrapList<T>(payload: unknown): T[] {
+  if (Array.isArray(payload)) return payload as T[]
+  if (
+    payload &&
+    typeof payload === "object" &&
+    Array.isArray((payload as { results?: unknown }).results)
+  ) {
+    return (payload as { results: T[] }).results
+  }
+  return []
+}
+
+// Подбор иконки по названию/категории услуги
+function iconForService(service: Service): LucideIcon {
+  const key = `${service.name ?? ""} ${service.category ?? ""}`.toLowerCase()
+  if (key.includes("волос") || key.includes("стриж") || key.includes("окраш"))
+    return Scissors
+  if (key.includes("ногт") || key.includes("маник") || key.includes("педик"))
+    return Sparkles
+  if (key.includes("массаж")) return UserCircle2
+  if (key.includes("кож") || key.includes("чистк") || key.includes("пилин"))
+    return Droplets
+  return Sparkles
+}
+
+function masterName(m: Master): string {
+  return m.name || m.full_name || "Без имени"
+}
+
+function masterRole(m: Master): string {
+  return m.role || m.position || m.specialization || ""
+}
+
+function masterPhoto(m: Master): string | undefined {
+  return m.photo || m.image || undefined
+}
+
+const API_BASE = "/api"
 
 export function HomePage() {
   const { openBooking } = useOutletContext<{ openBooking: () => void }>()
+
+  const [services, setServices] = useState<Service[]>([])
+  const [masters, setMasters] = useState<Master[]>([])
+  const [loadingServices, setLoadingServices] = useState(true)
+  const [loadingMasters, setLoadingMasters] = useState(true)
+
+  useEffect(() => {
+    let alive = true
+
+    fetch(`${API_BASE}/services/`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
+      .then((data) => {
+        if (alive) setServices(unwrapList<Service>(data))
+      })
+      .catch((err) => console.error("Не удалось загрузить услуги:", err))
+      .finally(() => {
+        if (alive) setLoadingServices(false)
+      })
+
+    fetch(`${API_BASE}/employees/`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
+      .then((data) => {
+        if (alive) setMasters(unwrapList<Master>(data))
+      })
+      .catch((err) => console.error("Не удалось загрузить мастеров:", err))
+      .finally(() => {
+        if (alive) setLoadingMasters(false)
+      })
+
+    return () => {
+      alive = false
+    }
+  }, [])
 
   return (
     <div className="flex flex-col flex-1">
@@ -31,9 +128,7 @@ export function HomePage() {
             alt="Роскошный интерьер салона Allure с мягким светом и элегантной мебелью"
             className="w-full h-full object-cover blur-[2px]"
           />
-          {/* затемнение под светлый текст: 55% — минимум, при котором весь текст держит контраст WCAG */}
           <div className="absolute inset-0 bg-black/55"></div>
-          {/* плавный переход в фон страницы только внизу, без засветки всего фото */}
           <div className="absolute inset-0 bg-gradient-to-t from-pearl to-transparent to-30%"></div>
         </div>
 
@@ -43,9 +138,7 @@ export function HomePage() {
           </span>
           <h1 className="text-5xl md:text-7xl font-serif text-white mb-6 leading-tight drop-shadow-sm">
             Перезагрузка <br />
-            <span className="text-gold-gradient italic">
-              за один визит.
-            </span>
+            <span className="text-gold-gradient italic">за один визит.</span>
           </h1>
           <p className="text-lg md:text-xl text-white/90 max-w-2xl mx-auto mb-10 font-medium">
             Погрузитесь в мир изысканного ухода — в спокойном современном
@@ -84,39 +177,48 @@ export function HomePage() {
             </NavLink>
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
-            {[
-              {
-                name: "Волосы",
-                icon: Scissors,
-                desc: "Стрижки, окрашивание и уход",
-              },
-              {
-                name: "Ногти",
-                icon: Sparkles,
-                desc: "Маникюр и педикюр",
-              },
-              {
-                name: "Массаж",
-                icon: UserCircle2,
-                desc: "Расслабление и терапия",
-              },
-              { name: "Уход за кожей", icon: Droplets, desc: "Чистки и пилинги" },
-            ].map((service, i) => (
-              <div
-                key={i}
-                className="group flex flex-col items-center text-center p-8 rounded-3xl bg-white border border-rose-100 shadow-sm hover:shadow-lg hover:border-gold/30 transition-all duration-300 cursor-pointer"
-              >
-                <div className="size-16 rounded-full bg-rose-50 text-gold flex items-center justify-center mb-6 group-hover:scale-110 transition-transform duration-300">
-                  <service.icon className="size-8 stroke-[1.5]" />
+          {loadingServices ? (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div
+                  key={i}
+                  className="flex flex-col items-center text-center p-8 rounded-3xl bg-white border border-rose-100 animate-pulse"
+                >
+                  <div className="size-16 rounded-full bg-rose-50 mb-6" />
+                  <div className="h-5 w-24 bg-rose-50 rounded mb-2" />
+                  <div className="h-3 w-32 bg-rose-50 rounded" />
                 </div>
-                <h3 className="text-xl font-serif text-foreground mb-2">
-                  {service.name}
-                </h3>
-                <p className="text-sm text-muted-foreground">{service.desc}</p>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          ) : services.length === 0 ? (
+            <p className="text-center text-muted-foreground py-8">
+              Услуги скоро появятся.
+            </p>
+          ) : (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
+              {services.map((service) => {
+                const Icon = iconForService(service)
+                return (
+                  <div
+                    key={service.id}
+                    className="group flex flex-col items-center text-center p-8 rounded-3xl bg-white border border-rose-100 shadow-sm hover:shadow-lg hover:border-gold/30 transition-all duration-300 cursor-pointer"
+                  >
+                    <div className="size-16 rounded-full bg-rose-50 text-gold flex items-center justify-center mb-6 group-hover:scale-110 transition-transform duration-300">
+                      <Icon className="size-8 stroke-[1.5]" />
+                    </div>
+                    <h3 className="text-xl font-serif text-foreground mb-2">
+                      {service.name}
+                    </h3>
+                    {service.description && (
+                      <p className="text-sm text-muted-foreground">
+                        {service.description}
+                      </p>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
         </div>
       </section>
 
@@ -132,51 +234,60 @@ export function HomePage() {
             </p>
           </div>
 
-          <div className="flex overflow-x-auto pb-10 -mx-6 px-6 gap-8 snap-x hide-scrollbar">
-            {[
-              {
-                name: "Елена Ростова",
-                role: "Ведущий стилист-колорист",
-                image: photoRostova,
-              },
-              {
-                name: "София Лин",
-                role: "Главный косметолог",
-                image: photoLin,
-              },
-              {
-                name: "Злата Кравцова",
-                role: "Мастер нейл-арта",
-                image: photoKravtsova,
-              },
-              {
-                name: "Богдан Тарасов",
-                role: "Массажист",
-                image: photoTarasov,
-              },
-            ].map((master, i) => (
-              <div
-                key={i}
-                className="snap-center shrink-0 w-[280px] flex flex-col items-center group cursor-pointer"
-              >
-                <div className="size-48 rounded-full p-2 border-2 border-transparent group-hover:border-gold transition-colors duration-500 mb-6">
-                  <div className="size-full rounded-full overflow-hidden bg-rose-100 relative">
-                    <ImageWithFallback
-                      src={master.image}
-                      alt={master.name}
-                      className="size-full object-cover grayscale opacity-80 group-hover:grayscale-0 group-hover:opacity-100 transition-all duration-500"
-                    />
-                  </div>
+          {loadingMasters ? (
+            <div className="flex overflow-x-auto pb-10 -mx-6 px-6 gap-8 snap-x hide-scrollbar">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div
+                  key={i}
+                  className="snap-center shrink-0 w-[280px] flex flex-col items-center"
+                >
+                  <div className="size-48 rounded-full bg-rose-100 mb-6 animate-pulse" />
+                  <div className="h-6 w-40 bg-rose-100 rounded mb-2" />
+                  <div className="h-4 w-32 bg-rose-100 rounded" />
                 </div>
-                <h3 className="text-2xl font-serif text-foreground mb-1 group-hover:text-gold transition-colors">
-                  {master.name}
-                </h3>
-                <p className="text-sm font-medium text-gold/80">
-                  {master.role}
-                </p>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          ) : masters.length === 0 ? (
+            <p className="text-center text-muted-foreground py-8">
+              Информация о мастерах скоро появится.
+            </p>
+          ) : (
+            <div className="flex overflow-x-auto pb-10 -mx-6 px-6 gap-8 snap-x hide-scrollbar">
+              {masters.map((master) => {
+                const photo = masterPhoto(master)
+                return (
+                  <div
+                    key={master.id}
+                    className="snap-center shrink-0 w-[280px] flex flex-col items-center group cursor-pointer"
+                  >
+                    <div className="size-48 rounded-full p-2 border-2 border-transparent group-hover:border-gold transition-colors duration-500 mb-6">
+                      <div className="size-full rounded-full overflow-hidden bg-rose-100 relative">
+                        {photo ? (
+                          <ImageWithFallback
+                            src={photo}
+                            alt={masterName(master)}
+                            className="size-full object-cover grayscale opacity-80 group-hover:grayscale-0 group-hover:opacity-100 transition-all duration-500"
+                          />
+                        ) : (
+                          <div className="size-full flex items-center justify-center text-rose-300">
+                            <UserCircle2 className="size-20 stroke-[1]" />
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <h3 className="text-2xl font-serif text-foreground mb-1 group-hover:text-gold transition-colors">
+                      {masterName(master)}
+                    </h3>
+                    {masterRole(master) && (
+                      <p className="text-sm font-medium text-gold/80">
+                        {masterRole(master)}
+                      </p>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
 
           <div className="text-center mt-4">
             <NavLink

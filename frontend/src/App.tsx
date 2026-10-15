@@ -39,20 +39,23 @@ function Layout() {
     <div className="min-h-screen flex flex-col relative overflow-x-clip bg-pearl text-foreground selection:bg-gold/20 selection:text-gold">
       {/* Header */}
       <header className="sticky top-0 z-50 w-full bg-pearl/90 backdrop-blur-md border-b border-rose-100/50">
-        <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
+        {/* Сетка из трёх равных колонок: логотип слева, меню в центре, действия справа */}
+        <div className="max-w-7xl mx-auto px-6 h-20 grid grid-cols-[1fr_auto_1fr] items-center gap-4">
+          {/* Логотип */}
           <NavLink
             to="/"
-            className="text-2xl font-serif text-gold flex items-center gap-2"
+            className="text-2xl font-serif text-gold flex items-center gap-2 justify-self-start"
           >
             <Sparkles className="size-5" />
             <span>Allure</span>
           </NavLink>
 
-          <nav className="hidden md:flex items-center gap-8">
+          {/* Меню — по центру страницы */}
+          <nav className="hidden lg:flex items-center justify-center gap-8">
             <NavLink
               to="/"
               className={({ isActive }) =>
-                `text-sm font-medium transition-colors hover:text-gold ${
+                `text-sm font-medium whitespace-nowrap transition-colors hover:text-gold ${
                   isActive ? "text-gold" : "text-muted-foreground"
                 }`
               }
@@ -62,7 +65,7 @@ function Layout() {
             <NavLink
               to="/services"
               className={({ isActive }) =>
-                `text-sm font-medium transition-colors hover:text-gold ${
+                `text-sm font-medium whitespace-nowrap transition-colors hover:text-gold ${
                   isActive ? "text-gold" : "text-muted-foreground"
                 }`
               }
@@ -72,7 +75,7 @@ function Layout() {
             <NavLink
               to="/masters"
               className={({ isActive }) =>
-                `text-sm font-medium transition-colors hover:text-gold ${
+                `text-sm font-medium whitespace-nowrap transition-colors hover:text-gold ${
                   isActive ? "text-gold" : "text-muted-foreground"
                 }`
               }
@@ -82,7 +85,7 @@ function Layout() {
             <NavLink
               to="/reviews"
               className={({ isActive }) =>
-                `text-sm font-medium transition-colors hover:text-gold ${
+                `text-sm font-medium whitespace-nowrap transition-colors hover:text-gold ${
                   isActive ? "text-gold" : "text-muted-foreground"
                 }`
               }
@@ -93,7 +96,7 @@ function Layout() {
               <NavLink
                 to="/panel"
                 className={({ isActive }) =>
-                  `text-sm font-medium transition-colors hover:text-gold ${
+                  `text-sm font-medium whitespace-nowrap transition-colors hover:text-gold ${
                     isActive ? "text-gold" : "text-muted-foreground"
                   }`
                 }
@@ -103,7 +106,8 @@ function Layout() {
             )}
           </nav>
 
-          <div className="hidden md:flex items-center gap-4">
+          {/* Действия — прижаты вправо */}
+          <div className="hidden lg:flex items-center gap-3 xl:gap-4 justify-self-end">
             {user ? (
               <>
                 <NavLink
@@ -128,22 +132,24 @@ function Layout() {
             ) : (
               <button
                 onClick={() => setAuthOpen(true)}
-                className="text-sm font-medium text-muted-foreground hover:text-gold transition-colors"
+                className="text-sm font-medium text-muted-foreground hover:text-gold transition-colors whitespace-nowrap"
               >
                 Войти
               </button>
             )}
             <button
               onClick={openBooking}
-              className="bg-gold hover:bg-gold-hover text-white px-6 py-2.5 rounded-full text-sm font-medium transition-all shadow-sm hover:shadow-md"
+              className="bg-gold hover:bg-gold-hover text-white px-6 py-2.5 rounded-full text-sm font-medium transition-all shadow-sm hover:shadow-md whitespace-nowrap"
             >
               Записаться
             </button>
           </div>
 
+          {/* Мобильный бургер — прижат вправо */}
           <button
-            className="md:hidden p-2 text-muted-foreground"
+            className="lg:hidden p-2 text-muted-foreground justify-self-end col-start-3"
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            aria-label="Меню"
           >
             {mobileMenuOpen ? (
               <X className="size-6" />
@@ -155,7 +161,7 @@ function Layout() {
 
         {/* Mobile menu */}
         {mobileMenuOpen && (
-          <div className="md:hidden absolute top-20 left-0 w-full bg-pearl border-b border-rose-100 p-6 flex flex-col gap-4 shadow-lg">
+          <div className="lg:hidden absolute top-20 left-0 w-full bg-pearl border-b border-rose-100 p-6 flex flex-col gap-4 shadow-lg">
             <NavLink
               to="/"
               onClick={() => setMobileMenuOpen(false)}
@@ -262,7 +268,7 @@ function Layout() {
       {/* Sticky Book Now Button (Mobile primarily, or floating) */}
       <button
         onClick={openBooking}
-        className="fixed bottom-6 right-6 md:hidden z-50 bg-gold text-white p-4 rounded-full shadow-lg hover:bg-gold-hover transition-transform hover:scale-105 active:scale-95"
+        className="fixed bottom-6 right-6 lg:hidden z-50 bg-gold text-white p-4 rounded-full shadow-lg hover:bg-gold-hover transition-transform hover:scale-105 active:scale-95"
       >
         <Calendar className="size-6" />
       </button>
@@ -271,7 +277,6 @@ function Layout() {
       <BackToTopButton />
 
       {/* Booking Modal */}
-      {/* чёрный список: говорим сразу, а не на последнем шаге записи */}
       {bookingOpen &&
         (user?.is_blocked ? (
           <BlockedNotice onClose={() => setBookingOpen(false)} />

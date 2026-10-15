@@ -8,9 +8,8 @@ import { formatDuration } from "@/lib/format"
 import { PriceTag } from "../components/PriceTag"
 import { ErrorMessage } from "../components/ErrorMessage"
 import { ImageWithFallback } from "../components/ImageWithFallback"
-import { Clock } from "lucide-react"
+import { Clock, Download } from "lucide-react"
 import { ShareButtons } from "../components/ShareButtons"
-import { Download } from "lucide-react"
 
 const CATEGORIES = ["Все", "Волосы", "Ногти", "Кожа", "Массаж"]
 
@@ -29,6 +28,7 @@ export function ServicesPage() {
     price: s.price,
     priceToday: s.price_today,
     discount: s.discount_percent,
+    image: s.image, // <-- картинка из API
   }))
 
   const filteredServices =
@@ -57,7 +57,6 @@ export function ServicesPage() {
           <Download className="size-4" />
           Скачать прайс-лист
         </a>
-
       </div>
 
       <div className="max-w-5xl mx-auto px-6 pt-12">
@@ -100,9 +99,10 @@ export function ServicesPage() {
               <div className="w-full md:w-64 h-48 md:h-auto overflow-hidden">
                 <ImageWithFallback
                   src={
-                    service.category === "Волосы" || service.category === "Кожа"
+                    service.image ??
+                    (service.category === "Волосы" || service.category === "Кожа"
                       ? detailPhoto
-                      : heroPhoto
+                      : heroPhoto)
                   }
                   alt={service.name}
                   className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
@@ -146,7 +146,6 @@ export function ServicesPage() {
                     title={service.name}
                   />
                 </div>
-
               </div>
             </div>
           ))}

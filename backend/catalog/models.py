@@ -16,18 +16,19 @@ class ServiceManager(models.Manager):
         return super().get_queryset().filter(deleted_at__isnull=True)
 
 
-class Service(models.Model): #класс сервиса для бд
+class Service(models.Model):
     name = models.CharField("Название", max_length=100)
     description = models.TextField("Описание", blank=True)
     price = models.DecimalField("Цена", max_digits=8, decimal_places=2)
-    duration_minutes = models.PositiveIntegerField("Длительность (мин)") #для расчёта столов записи
-    category = models.CharField("Категория", max_length=50, blank=True) #пригодится для фильтрации
+    duration_minutes = models.PositiveIntegerField("Длительность (мин)")
+    category = models.CharField("Категория", max_length=50, blank=True)
+    image = models.ImageField("Изображение", upload_to="services/", blank=True, null=True)  # <-- новое поле
     is_active = models.BooleanField("Активен", default=True)
     created_at = models.DateTimeField("Дата создания", auto_now_add=True)
-    deleted_at = models.DateTimeField("Удалена", null=True, blank=True)  # мягкое удаление, можно восстановить
+    deleted_at = models.DateTimeField("Удалена", null=True, blank=True)
 
     objects = ServiceManager()
-    all_objects = models.Manager()  # вместе с удалёнными — для панели и Django-админки
+    all_objects = models.Manager()
 
     class Meta:
         verbose_name = "Услуга"
@@ -36,7 +37,8 @@ class Service(models.Model): #класс сервиса для бд
     def __str__(self):
         return self.name
 
-class Employee(models.Model): #класс сотрудника для бд
+
+class Employee(models.Model):
     user = models.OneToOneField(
         User, on_delete=models.CASCADE,
         related_name="employee_profile",
@@ -94,5 +96,5 @@ def price_on(service, day):
     if promo is None:
         return service.price, None
     price = (service.price * (100 - promo.discount_percent) / 100).quantize(Decimal("1"), ROUND_HALF_UP)
-    price = price.quantize(Decimal("0.01"))  # до рубля, но в формате цен API: "800.00"
+    price = price.quantize(Decimal("0.01"))
     return price, promo

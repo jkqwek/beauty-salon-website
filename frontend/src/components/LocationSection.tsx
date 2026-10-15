@@ -14,7 +14,7 @@ export function LocationSection() {
           <MapPin className="size-4 text-gold" /> б-р Строителей, 28/1, Кемерово, Кемеровская обл., 650003
         </p>
         <p className="flex items-center gap-2">
-          <Clock className="size-4 text-gold" /> Ежедневно с 9:00 20:30
+          <Clock className="size-4 text-gold" /> Ежедневно с 9:00 до 20:30
         </p>
       </div>
 
@@ -22,9 +22,10 @@ export function LocationSection() {
         <div className="rounded-3xl overflow-hidden border border-rose-100 h-80">
           <iframe
             src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d72598.9211688277!2d86.01549029726563!3d55.3454996!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x42d808b3676e79d7%3A0xea0c4f53ac1bf873!2sSecret!5e0!3m2!1sru!2sru!4v1791720110758!5m2!1sru!2sru"
-            height="100%"
-            frameBorder="0"
+            className="w-full h-full border-0 block"
+            loading="lazy"
             allowFullScreen
+            referrerPolicy="no-referrer-when-downgrade"
             title="Карта проезда к салону Allure"
           />
         </div>

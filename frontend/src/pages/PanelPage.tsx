@@ -133,7 +133,7 @@ function BookingsSection() {
   const today = toIsoDate(new Date())
   const [mode, setMode] = useState<PeriodMode>("day")
   const [anchor, setAnchor] = useState(today)
-  const [master, setMaster] = useState<number | null>(null) // null — все мастера
+  const [master, setMaster] = useState<number | null>(null)
   const range = periodRange(mode, anchor)
   const { data, error, reload } = useApi(() => adminApi.bookings(...range), [range[0], range[1]])
   const employees = useApi(catalogApi.employees)
@@ -202,7 +202,7 @@ function BookingsSection() {
             value={anchor}
             onChange={(e) => {
               if (!e.target.value) return
-              setMode("day") // календарь выбирает конкретный день
+              setMode("day")
               setAnchor(e.target.value)
             }}
             aria-label="Выбрать день"
@@ -305,7 +305,7 @@ const cellStyle = (c: LoadCell) => {
   if (c.busy) return { backgroundColor: `color-mix(in srgb, var(--color-gold) ${25 + Math.round((75 * Math.min(c.busy, 60)) / 60)}%, white)` }
   if (c.blocked) return { backgroundColor: "var(--color-rose-200)" }
   if (!c.work) return { backgroundColor: "#f1f1f1" }
-  return undefined // рабочее и свободное — белое
+  return undefined
 }
 
 const cellTitle = (c: LoadCell) =>
@@ -528,6 +528,41 @@ function PolicyForm({ initial }: { initial: number }) {
   )
 }
 
+/** Фото услуги: клик — загрузить и обрезать / удалить */
+function ServiceImageCell({ row, act }: { row: Row; act: RowActions }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <>
+      <button
+        onClick={() => setOpen(true)}
+        title="Изменить фото"
+        aria-label={`Фото: ${row.name}`}
+        className="relative group rounded-xl overflow-hidden size-16 shrink-0 border border-rose-100"
+      >
+        {row.image ? (
+          <img src={row.image} alt={row.name} className="size-full object-cover" />
+        ) : (
+          <span className="size-full flex items-center justify-center bg-rose-50 text-rose-300">
+            <Camera className="size-6" />
+          </span>
+        )}
+        <span className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+          <Camera className="size-4 text-white" />
+        </span>
+      </button>
+      {open && (
+        <AvatarCropper
+          title={`Фото: ${row.name}`}
+          hasPhoto={Boolean(row.image)}
+          onSave={(blob) => catalogApi.uploadServiceImage(row.id, blob).then(act.reload)}
+          onDelete={() => catalogApi.deleteServiceImage(row.id).then(act.reload)}
+          onClose={() => setOpen(false)}
+        />
+      )}
+    </>
+  )
+}
+
 function ServicesSection() {
   const [deleted, setDeleted] = useState(false)
   return (
@@ -582,6 +617,7 @@ function ServicesSection() {
           }
           rowClass={(r) => (r.is_active ? "" : "opacity-50")}
           fields={[
+            { name: "image", label: "Фото", inForm: false, render: (r, act) => <ServiceImageCell row={r} act={act} /> },
             { name: "name", label: "Название" },
             { name: "category", label: "Категория" },
             {
@@ -688,9 +724,8 @@ function ReviewsSection() {
 
 function ClosuresSection() {
   const today = toIsoDate(new Date())
-  // предупреждение до сохранения: какие записи попадут на эти дни (решает сотрудник, автоотмены нет)
   const checkConflicts = async (v: Record<string, Value>) => {
-    if (!v.date_from || !v.date_to) return true // пусть сервер сам скажет, что даты обязательны
+    if (!v.date_from || !v.date_to) return true
     const conflicts = await adminApi.closureConflicts({
       date_from: String(v.date_from),
       date_to: String(v.date_to),
@@ -789,7 +824,6 @@ function PromotionsAdminSection() {
   )
 }
 
-/** Счётчики панели: ждут подтверждения, новые отзывы, записей сегодня — раз в минуту и сразу после действий */
 function useCounters(enabled: boolean) {
   const [counters, setCounters] = useState<PanelCounters | null>(null)
   useEffect(() => {
@@ -847,7 +881,7 @@ function MastersSection() {
     <CrudTable
       title="Мастера"
       endpoint="/employees/"
-      canDelete={false} // удаление каскадом удалит записи — вместо этого снимаем "Работает"
+      canDelete={false}
       rowClass={(r) => (r.is_active ? "" : "opacity-50")}
       fields={[
         { name: "photo", label: "Фото", inForm: false, render: (r, act) => <MasterPhotoCell row={r} act={act} /> },

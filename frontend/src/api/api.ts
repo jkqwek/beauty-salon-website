@@ -280,6 +280,13 @@ export interface IncomeSummary {
   bookings_count: number
 }
 
+export interface WeekdayRevenueRow {
+  weekday: number
+  name: string
+  revenue: string
+  bookings_count: number
+}
+
 interface DateRangeParams {
   date_from?: string
   date_to?: string
@@ -308,8 +315,9 @@ export const financeApi = {
 
   employeeWorkload: (params: DateRangeParams = {}) =>
     api<EmployeeWorkloadRow[]>(`/finance/employee-workload/${toQueryString(params)}`),
-}
 
+  weekdayRevenue: () => api<WeekdayRevenueRow[]>("/finance/weekday-revenue/"),
+}
 export interface PanelCounters {
   pending_bookings: number
   new_reviews: number

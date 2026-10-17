@@ -1,4 +1,4 @@
-import { adminApi, reportsApi, type Booking } from "@/api/api"
+import { adminApi, financeApi, reportsApi, type Booking } from "@/api/api"
 import { useApi } from "@/api/useApi"
 import { ErrorMessage } from "../components/ErrorMessage"
 import { BOOKING_STATUS } from "../components/StatusBadge"
@@ -49,12 +49,37 @@ function TodayTiles() {
   )
 }
 
+/** Выручка по дням недели (простая диаграмма) */
+function WeekdayRevenue() {
+  const { data, error, reload } = useApi(financeApi.weekdayRevenue)
+  if (error) return <ErrorMessage error={error} onRetry={reload} />
+  if (!data) return <p className="text-muted-foreground mb-10">Загрузка…</p>
+  const rows = data.map((r) => ({ ...r, revenue: Number(r.revenue) }))
+  return (
+    <section className="mb-12">
+      <h2 className="text-2xl font-serif text-foreground mb-4">Выручка по дням недели</h2>
+      <div className="bg-white rounded-3xl border border-rose-100 p-6" style={{ height: 320 }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={rows}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey="name" tick={{ fontSize: 12 }} />
+            <YAxis />
+            <Tooltip formatter={(v) => formatPrice(String(v))} />
+            <Bar dataKey="revenue" name="Выручка" fill="#c9a24b" radius={[6, 6, 0, 0]} />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+    </section>
+  )
+}
+
 export function DashboardPage() {
   const { data, loading, error, reload } = useApi(reportsApi.popularServices)
 
   return (
     <div>
       <TodayTiles />
+      <WeekdayRevenue />
       <h1 className="text-3xl font-serif text-foreground mb-8">Популярные услуги</h1>
 
       {loading && <p className="text-muted-foreground">Загрузка…</p>}

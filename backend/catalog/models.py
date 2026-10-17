@@ -53,6 +53,9 @@ class Employee(models.Model):
     rating = models.DecimalField("Рейтинг", max_digits=2, decimal_places=1,
                                  null=True, blank=True,
                                  validators=[MinValueValidator(0), MaxValueValidator(5)])
+    commission_percent = models.DecimalField("Процент мастера, %", max_digits=5, decimal_places=2,
+                                             default=30,
+                                             validators=[MinValueValidator(0), MaxValueValidator(100)])
 
     class Meta:
         verbose_name = "Сотрудник"

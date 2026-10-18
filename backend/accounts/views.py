@@ -9,7 +9,9 @@ from django.contrib.auth import get_user_model
 from django.db.models import Count, Max, Q, Sum
 from django.utils import timezone
 from rest_framework import generics, mixins, permissions, viewsets
-from rest_framework.decorators import api_view, parser_classes, permission_classes
+from rest_framework.decorators import api_view, parser_classes, permission_classes, throttle_classes
+from rest_framework.throttling import AnonRateThrottle, ScopedRateThrottle
+from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework.exceptions import ValidationError
 from rest_framework.parsers import MultiPartParser
 from rest_framework.response import Response
@@ -18,6 +20,9 @@ from catalog.permissions import IsAdminUser
 from config.images import delete_image, save_image
 from .models import ClientProfile
 from .serializers import REGULAR_CANDIDATE_DAYS, AdminUserSerializer, MeSerializer, RegisterSerializer
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError as DjangoValidationError
+
 
 User = get_user_model()
 COMPLETED = Q(bookings__status="completed")  # статистика клиента считается по завершённым визитам
@@ -26,6 +31,8 @@ COMPLETED = Q(bookings__status="completed")  # статистика клиент
 class RegisterView(generics.CreateAPIView):
     serializer_class = RegisterSerializer
     permission_classes = [permissions.AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "register"
 
 
 @api_view(["GET", "PATCH"])
@@ -80,7 +87,7 @@ class AdminUserViewSet(mixins.ListModelMixin, mixins.UpdateModelMixin, viewsets.
 @api_view(["POST"])
 @permission_classes([permissions.IsAuthenticated])
 def change_password(request):
-    s = ChangePasswordSerializer(data=request.data)
+    s = ChangePasswordSerializer(data=request.data, context={"request": request})
     s.is_valid(raise_exception=True)
     if not request.user.check_password(s.validated_data["old_password"]):
         raise ValidationError({"old_password": "Неверный текущий пароль."})
@@ -88,9 +95,15 @@ def change_password(request):
     request.user.save()
     return Response({"detail": "Пароль изменён."})
 
+class PasswordResetThrottle(AnonRateThrottle):
+    scope = "password_reset"
+
+class PasswordResetConfirmThrottle(AnonRateThrottle):
+    scope = "password_reset_confirm"
 
 @api_view(["POST"])
 @permission_classes([permissions.AllowAny])
+@throttle_classes([PasswordResetThrottle])
 def password_reset(request):
     """Заглушка: ссылка для сброса выводится в консоль сервера."""
     s = PasswordResetRequestSerializer(data=request.data)
@@ -106,6 +119,7 @@ def password_reset(request):
 
 @api_view(["POST"])
 @permission_classes([permissions.AllowAny])
+@throttle_classes([PasswordResetConfirmThrottle])
 def password_reset_confirm(request):
     s = PasswordResetConfirmSerializer(data=request.data)
     s.is_valid(raise_exception=True)
@@ -115,6 +129,14 @@ def password_reset_confirm(request):
         raise ValidationError({"uid": "Неверная ссылка."})
     if not default_token_generator.check_token(user, s.validated_data["token"]):
         raise ValidationError({"token": "Ссылка недействительна или устарела."})
+    try:
+        validate_password(s.validated_data["new_password"], user=user)
+    except DjangoValidationError as e:
+        raise ValidationError({"new_password": list(e.messages)})
     user.set_password(s.validated_data["new_password"])
     user.save()
     return Response({"detail": "Пароль обновлён."})
+
+class LoginView(TokenObtainPairView):
+    throttle_classes = [ScopedRateThrottle]
+    throttle_score = "login"

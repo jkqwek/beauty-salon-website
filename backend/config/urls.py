@@ -19,9 +19,9 @@ from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import include, path
 from rest_framework.routers import SimpleRouter
-from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+from rest_framework_simplejwt.views import TokenRefreshView
 
-from accounts.views import AdminUserViewSet, RegisterView, me, me_avatar, change_password, password_reset, password_reset_confirm
+from accounts.views import AdminUserViewSet, RegisterView, me, me_avatar, change_password, password_reset, password_reset_confirm, LoginView
 from bookings.views import (
     AdminBookingViewSet, AdminReviewViewSet, SalonClosureViewSet, ScheduleViewSet, TimeOffViewSet,
     panel_counters, public_reviews, salon_load, today_stats,
@@ -44,7 +44,7 @@ urlpatterns = [
     path("api/bookings/", include("bookings.urls")),
     
     path("api/auth/register/", RegisterView.as_view(), name="register"),
-    path("api/auth/login/", TokenObtainPairView.as_view(), name="token-obtain-pair"),
+    path("api/auth/login/", LoginView.as_view(), name="token-obtain-pair"),
     path("api/auth/refresh/", TokenRefreshView.as_view(), name="token-refresh"),
     path("api/auth/me/", me, name="me"),
     path("api/auth/me/avatar/", me_avatar, name="me-avatar"),

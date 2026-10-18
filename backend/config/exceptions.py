@@ -1,5 +1,7 @@
 import logging
+import math
 
+from rest_framework.exceptions import Throttled
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import exception_handler
@@ -26,7 +28,18 @@ def custom_exception_handler(exc, context):
             {"detail": "Внутренняя ошибка сервера. Попробуйте позже.", "code": "server_error"},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
-
+    
+    if isinstance(exc, Throttled):
+        wait = math.ceil(exc.wait) if exc.wait else None
+        response.data = {
+            "detail": (
+                f"Слишком много попыток. Повторите через {wait} сек."
+                if wait else "Слишком много попыток. Попробуйте позже."
+            ),
+            "code": "throttled",
+        }
+        return response
+    
     data = response.data
     if response.status_code == status.HTTP_400_BAD_REQUEST:
         errors = {"non_field_errors": _messages(data)} if isinstance(data, list) else {

@@ -139,6 +139,18 @@ REST_FRAMEWORK = {
         "rest_framework_simplejwt.authentication.JWTAuthentication",
         "rest_framework.authentication.SessionAuthentication",
     ],
+
+    "DEFAULT_PERMISSION_CLASSES": [
+        "rest_framework.permissions.IsAuthenticated",
+    ],
+
+    "DEFAULT_THROTTLE_RATES": {
+        "login": "5/min",
+        "register": "10/hour",
+        "password_reset": "5/hour",
+        "password_reset_confirm": "10/hour",
+    },
+
     "EXCEPTION_HANDLER": "config.exceptions.custom_exception_handler",
 }
 

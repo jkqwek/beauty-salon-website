@@ -5,6 +5,7 @@ from rest_framework import serializers
 
 from config.images import RelativeImageField
 from .models import ClientProfile
+from django.core.exceptions import ValidationError as DjangoValidationError
 
 User = get_user_model()
 REGULAR_CANDIDATE_VISITS = 5  # подсказка ⭐: столько завершённых визитов…
@@ -29,6 +30,11 @@ class RegisterSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         if attrs["password"] != attrs["password2"]:
             raise serializers.ValidationError({"password2": "Пароли не совпадают"})
+        candidate = User(username=attrs.get("username", ""), email=attrs.get("email", ""))
+        try:
+            validate_password(attrs["password"], user=candidate)
+        except DjangoValidationError as e:
+            raise serializers.ValidationError({"password": list(e.messages)})
         return attrs
 
     def create(self, validated_data):
@@ -120,6 +126,12 @@ class MeSerializer(serializers.ModelSerializer):
 class ChangePasswordSerializer(serializers.Serializer):
     old_password = serializers.CharField(write_only=True)
     new_password = serializers.CharField(write_only=True, validators=[validate_password])
+    def validate(self, attrs):
+        try:
+            validate_password(attrs["new_password"], user=self.context["request"].user)
+        except DjangoValidationError as e:
+            raise serializers.ValidationError({"new_password": list(e.messages)})
+        return attrs
 
 class PasswordResetRequestSerializer(serializers.Serializer):
     email = serializers.EmailField()

@@ -10,7 +10,11 @@ from rest_framework.response import Response
 from rest_framework import mixins, serializers, status, viewsets
 
 from catalog.models import Employee, Service, price_on
-from .models import ACTIVE_STATUSES, CancellationPolicy, Review, SalonClosure, Schedule, Booking, TimeOff, User
+from config.images import prepare_image
+from .models import (
+    ACTIVE_STATUSES, MAX_REVIEW_PHOTOS, CancellationPolicy, Review, ReviewPhoto, SalonClosure, Schedule, Booking,
+    TimeOff, User,
+)
 from .serializers import (
     AdminBookingSerializer, AdminReviewSerializer, BookingCreateSerializer, BookingSerializer,
     CancellationPolicySerializer, PublicReviewSerializer, ReviewCreateSerializer, SalonClosureSerializer,
@@ -377,8 +381,8 @@ def salon_load(request):
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def leave_review(request, booking_id):
-    """Отзыв о своём выполненном визите: один на визит. Оценка сразу идёт в рейтинг мастера,
-    текст публикуется после модерации."""
+    """Отзыв о своём выполненном визите: один на визит, до 3 фото (поле photos). Оценка сразу идёт
+    в рейтинг мастера, текст и фото публикуются после модерации."""
     booking = get_object_or_404(Booking.objects.select_related("employee"), pk=booking_id, client=request.user)
     if booking.status != "completed":
         raise ValidationError("Отзыв можно оставить только после визита.")
@@ -386,7 +390,13 @@ def leave_review(request, booking_id):
         raise ValidationError("Отзыв на этот визит уже оставлен.")
     data = ReviewCreateSerializer(data=request.data)
     data.is_valid(raise_exception=True)
-    Review.objects.create(booking=booking, text=data.validated_data["text"])
+    uploads = request.FILES.getlist("photos")
+    if len(uploads) > MAX_REVIEW_PHOTOS:
+        raise ValidationError({"photos": f"Не больше {MAX_REVIEW_PHOTOS} фото."})
+    photos = [prepare_image(f, "photos", max_side=1600) for f in uploads]  # проверяем все до сохранения
+    review = Review.objects.create(booking=booking, text=data.validated_data["text"])
+    for image in photos:
+        ReviewPhoto.objects.create(review=review, image=image)
     booking.rating = data.validated_data["rating"]  # то же поле, что у оценки из бота
     booking.save(update_fields=["rating"])
     recalc_master_rating(booking.employee)
@@ -399,7 +409,7 @@ def public_reviews(request):
     """Опубликованные отзывы: ?employee= — о мастере, ?min_rating=&limit= — для блока на главной."""
     qs = Review.objects.filter(status="published").select_related(
         "booking__client__profile", "booking__employee", "booking__service"
-    )
+    ).prefetch_related("photos")
     params = request.query_params
     if params.get("employee"):
         qs = qs.filter(booking__employee_id=_int_param(params, "employee"))
@@ -415,10 +425,19 @@ def public_reviews(request):
 
 
 class AdminReviewViewSet(mixins.ListModelMixin, mixins.UpdateModelMixin, viewsets.GenericViewSet):
-    """Модерация отзывов: статус и ответ салона."""
-    queryset = Review.objects.select_related("booking__client__profile", "booking__employee", "booking__service")
+    """Модерация отзывов: статус, ответ салона и удаление неуместных фото."""
+    queryset = Review.objects.select_related(
+        "booking__client__profile", "booking__employee", "booking__service"
+    ).prefetch_related("photos")
     serializer_class = AdminReviewSerializer
     permission_classes = [IsAdminUser]
+
+    @action(detail=True, methods=["delete"], url_path=r"photos/(?P<photo_id>\d+)")
+    def delete_photo(self, request, pk=None, photo_id=None):
+        photo = get_object_or_404(ReviewPhoto, pk=photo_id, review_id=pk)
+        photo.image.delete(save=False)
+        photo.delete()
+        return Response(self.get_serializer(self.get_object()).data)
 
 
 class SalonClosureViewSet(viewsets.ModelViewSet):

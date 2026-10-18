@@ -6,14 +6,19 @@ from .serializers import (ChangePasswordSerializer, PasswordResetRequestSerializ
 from datetime import timedelta
 
 from django.contrib.auth import get_user_model
-from django.db.models import Count, Max, Q, Sum
+from django.db.models import Count, Max, OuterRef, Q, Subquery, Sum
+from django.db.models.functions import Coalesce
+from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import generics, mixins, permissions, viewsets
-from rest_framework.decorators import api_view, parser_classes, permission_classes
+from rest_framework.decorators import action, api_view, parser_classes, permission_classes
 from rest_framework.exceptions import ValidationError
 from rest_framework.parsers import MultiPartParser
 from rest_framework.response import Response
 
+from bookings.models import BONUS_PERCENT, BonusOperation
+from bookings.serializers import BonusOperationSerializer
+from bookings.services import bonus_balance
 from catalog.permissions import IsAdminUser
 from config.images import delete_image, save_image
 from .models import ClientProfile
@@ -54,6 +59,19 @@ def me_avatar(request):
     return Response(MeSerializer(request.user, context={"request": request}).data)
 
 
+def _bonus_summary(user):
+    operations = user.bonus_operations.select_related("booking")
+    return {"balance": bonus_balance(user), "percent": BONUS_PERCENT,
+            "operations": BonusOperationSerializer(operations, many=True).data}
+
+
+@api_view(["GET"])
+@permission_classes([permissions.IsAuthenticated])
+def me_bonus(request):
+    """Свои бонусные баллы: баланс, правило начисления и история операций."""
+    return Response(_bonus_summary(request.user))
+
+
 class AdminUserViewSet(mixins.ListModelMixin, mixins.UpdateModelMixin, viewsets.GenericViewSet):
     """Панель: база клиентов со статистикой визитов, смена статуса, контактов и меток."""
     serializer_class = AdminUserSerializer
@@ -68,9 +86,27 @@ class AdminUserViewSet(mixins.ListModelMixin, mixins.UpdateModelMixin, viewsets.
                 recent_visits=Count("bookings", filter=COMPLETED & Q(bookings__date__gte=half_year_ago)),
                 last_visit=Max("bookings__date", filter=COMPLETED),
                 total_spent=Sum("bookings__price", filter=COMPLETED),
+                # подзапросом: второй JOIN рядом с bookings размножил бы суммы выше
+                bonus_balance=Coalesce(Subquery(
+                    BonusOperation.objects.filter(client=OuterRef("pk")).values("client")
+                    .annotate(total=Sum("amount")).values("total")
+                ), 0),
             )
             .order_by("-date_joined")
         )
+
+    @action(detail=True, methods=["get", "post"])
+    def bonus(self, request, pk=None):
+        """Баллы клиента: GET — баланс и история, POST {amount, comment} — начислить (+) или списать (−)."""
+        user = get_object_or_404(User, pk=pk)
+        if request.method == "POST":
+            operation = BonusOperationSerializer(data=request.data)
+            operation.is_valid(raise_exception=True)
+            balance = bonus_balance(user)
+            if balance + operation.validated_data["amount"] < 0:
+                raise ValidationError({"amount": f"Недостаточно баллов: на балансе {balance}."})
+            operation.save(client=user)
+        return Response(_bonus_summary(user))
 
     def perform_update(self, serializer):
         if serializer.instance == self.request.user and serializer.validated_data.get("is_staff") is False:

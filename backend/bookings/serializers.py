@@ -5,7 +5,7 @@ from rest_framework import serializers
 
 from catalog.models import Employee, Service, price_on
 from config.images import RelativeImageField
-from .models import Booking, CancellationPolicy, Review, SalonClosure, Schedule, TimeOff
+from .models import BonusOperation, Booking, CancellationPolicy, Review, SalonClosure, Schedule, TimeOff
 from .services import MAX_DAYS_AHEAD, closure_conflicts, conflict_label, get_free_slots, slot_taken
 
 BLOCKED_MESSAGE = "Онлайн-запись недоступна. Свяжитесь с салоном."
@@ -162,14 +162,18 @@ class PublicReviewSerializer(serializers.ModelSerializer):
     employee_id = serializers.IntegerField(source="booking.employee_id", read_only=True)
     employee_name = serializers.CharField(source="booking.employee.full_name", read_only=True)
     service_name = serializers.CharField(source="booking.service.name", read_only=True)
+    photos = serializers.SerializerMethodField()
 
     class Meta:
         model = Review
         fields = ("id", "rating", "text", "reply", "created_at", "author", "author_avatar",
-                  "employee_id", "employee_name", "service_name")
+                  "employee_id", "employee_name", "service_name", "photos")
 
     def get_author(self, review):
         return public_author(review.booking.client)
+
+    def get_photos(self, review):
+        return [{"id": p.id, "url": p.image.url} for p in review.photos.all()]
 
 
 class AdminReviewSerializer(PublicReviewSerializer):
@@ -184,3 +188,19 @@ class AdminReviewSerializer(PublicReviewSerializer):
     def get_client_name(self, review):
         user = review.booking.client
         return user.get_full_name() or user.username
+
+
+class BonusOperationSerializer(serializers.ModelSerializer):
+    """Операция с баллами. Вручную сотрудник задаёт сумму (+ начислить, − списать) и комментарий."""
+    amount = serializers.IntegerField(min_value=-100000, max_value=100000)
+    comment = serializers.CharField(max_length=200)
+    visit_date = serializers.DateField(source="booking.date", read_only=True)  # у начислений за визит
+
+    class Meta:
+        model = BonusOperation
+        fields = ("id", "amount", "comment", "visit_date", "created_at")
+
+    def validate_amount(self, value):
+        if value == 0:
+            raise serializers.ValidationError("Укажите количество баллов.")
+        return value

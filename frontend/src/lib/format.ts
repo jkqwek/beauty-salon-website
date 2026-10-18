@@ -38,6 +38,18 @@ export const shiftDate = (iso: string, days: number) => {
   return toIsoDate(new Date(d.getFullYear(), d.getMonth(), d.getDate() + days))
 }
 
+/** "сегодня", "завтра" или "24 октября" */
+export function relativeDay(iso: string): string {
+  const today = toIsoDate(new Date())
+  if (iso === today) return "сегодня"
+  if (iso === shiftDate(today, 1)) return "завтра"
+  return formatDayMonth(iso)
+}
+
+/** Сколько часов до визита (дата и время в местном времени салона) */
+export const hoursUntil = (date: string, time: string) =>
+  (new Date(`${date}T${time}`).getTime() - Date.now()) / 3_600_000
+
 /** Календарные периоды: день, неделя пн–вс, месяц с 1-го по последнее число */
 export type PeriodMode = "day" | "week" | "month"
 

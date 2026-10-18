@@ -3,7 +3,14 @@ from django.db.models.signals import post_save
 from django.dispatch import receiver
 
 from .models import Booking
+from .services import sync_visit_bonus
 from telegram_bot.notify import notify_admin_new_appointment, notify_master_new_booking
+
+
+@receiver(post_save, sender=Booking)
+def update_visit_bonus(sender, instance, **kwargs):
+    """Баллы за визит при любом сохранении записи: панель, Django-админка, кабинет мастера, бот."""
+    sync_visit_bonus(instance)
 
 
 @receiver(post_save, sender=Booking)

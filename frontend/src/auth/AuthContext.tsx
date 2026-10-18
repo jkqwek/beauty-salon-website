@@ -15,6 +15,7 @@ interface AuthState {
   register: (data: RegisterData) => Promise<void>
   logout: () => void
   updateUser: (user: User) => void // после правки профиля или фото
+  refreshUser: () => void // перечитать баллы и ближайшую запись после записи, переноса, отмены
 }
 
 const AuthContext = createContext<AuthState | null>(null)
@@ -58,13 +59,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await login(data.username, data.password) // после регистрации сразу входим
   }
 
+  const refreshUser = () => {
+    authApi.me().then(setUser).catch(() => {})
+  }
+
   const logout = () => {
     tokens.clear()
     setUser(null)
   }
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout, updateUser: setUser }}>
+    <AuthContext.Provider value={{ user, loading, login, register, logout, updateUser: setUser, refreshUser }}>
       {children}
     </AuthContext.Provider>
   )

@@ -10,6 +10,31 @@ export interface User {
   avatar: string | null
   is_staff: boolean
   is_blocked: boolean | null
+  bonus_balance: number
+  next_booking: NextBooking | null
+}
+
+/** Ближайшая предстоящая запись — напоминание в шапке и в кабинете */
+export interface NextBooking {
+  id: number
+  date: string
+  start_time: string
+  service_name: string
+  employee_name: string
+}
+
+export interface BonusOperation {
+  id: number
+  amount: number // + начисление, − списание
+  comment: string
+  visit_date: string | null // у начислений за визит
+  created_at: string
+}
+
+export interface BonusSummary {
+  balance: number
+  percent: number
+  operations: BonusOperation[]
 }
 
 export type ProfileData = Pick<User, "first_name" | "last_name" | "email"> & { phone: string }
@@ -109,6 +134,7 @@ export const authApi = {
   updateMe: (data: ProfileData) => api<User>("/auth/me/", { method: "PATCH", body: data }),
   uploadAvatar: (blob: Blob) => api<User>("/auth/me/avatar/", { method: "PUT", body: fileForm("avatar", blob) }),
   deleteAvatar: () => api<User>("/auth/me/avatar/", { method: "DELETE" }),
+  bonus: () => api<BonusSummary>("/auth/me/bonus/"),
 }
 
 export const catalogApi = {
@@ -142,8 +168,13 @@ export const bookingApi = {
     api<PriceQuote>(`/bookings/price/?${query({ service_id: serviceId, date })}`),
   reschedule: (id: number, date: string, start_time: string) =>
     api<Booking>(`/bookings/${id}/reschedule/`, { method: "POST", body: { date, start_time } }),
-  review: (id: number, data: { rating: number; text: string }) =>
-    api<Booking>(`/bookings/${id}/review/`, { method: "POST", body: data }),
+  review: (id: number, data: { rating: number; text: string; photos: File[] }) => {
+    const form = new FormData()
+    form.append("rating", String(data.rating))
+    form.append("text", data.text)
+    data.photos.forEach((photo) => form.append("photos", photo))
+    return api<Booking>(`/bookings/${id}/review/`, { method: "POST", body: form })
+  },
   upcomingClosures: () => api<Closure[]>("/bookings/closures/upcoming/"),
   create: (data: { employee: number; service: number; date: string; start_time: string }) =>
     api<Booking>("/bookings/", { method: "POST", body: data }),
@@ -200,6 +231,7 @@ export interface AdminUser {
   visits: number
   last_visit: string | null
   total_spent: string | null
+  bonus_balance: number
   note: string | null
   master: string | null
 }
@@ -225,6 +257,11 @@ export const adminApi = {
   load: (date: string) => api<SalonLoad>(`/admin/load/?date=${date}`),
   setCancellationPolicy: (data: CancellationPolicy) =>
     api<CancellationPolicy>("/bookings/cancellation-policy/", { method: "PATCH", body: data }),
+  bonus: (userId: number) => api<BonusSummary>(`/admin/users/${userId}/bonus/`),
+  addBonus: (userId: number, data: { amount: number; comment: string }) =>
+    api<BonusSummary>(`/admin/users/${userId}/bonus/`, { method: "POST", body: data }),
+  deleteReviewPhoto: (reviewId: number, photoId: number) =>
+    api<unknown>(`/admin/reviews/${reviewId}/photos/${photoId}/`, { method: "DELETE" }),
 }
 
 export interface SalonLoad {
@@ -350,6 +387,12 @@ export interface PublicReview {
   employee_id: number
   employee_name: string
   service_name: string
+  photos: ReviewPhoto[]
+}
+
+export interface ReviewPhoto {
+  id: number
+  url: string
 }
 
 export const reviewsApi = {

@@ -77,6 +77,7 @@ function text(f: Field, row: Row): string {
   if (f.type === "multiselect") return (v as number[]).map((id) => labelOf(f, id)).join(", ")
   if (f.type === "checkbox") return v ? "Да" : "Нет"
   if (f.type === "time" && v) return String(v).slice(0, 5)
+  if (Array.isArray(v)) return String(v.length) // например, фото к отзыву — сколько их
   return v == null ? "" : String(v)
 }
 

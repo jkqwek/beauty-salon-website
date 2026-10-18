@@ -12,6 +12,7 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
+  Gift,
   LayoutGrid,
   MessageSquareText,
   Package,
@@ -23,9 +24,19 @@ import {
   UserCog,
   Users,
   Wallet,
+  X,
 } from "lucide-react"
 import { useAuth } from "@/auth/AuthContext"
-import { adminApi, bookingApi, catalogApi, type Booking, type Employee, type PanelCounters, type SalonLoad } from "@/api/api"
+import {
+  adminApi,
+  bookingApi,
+  catalogApi,
+  type Booking,
+  type Employee,
+  type PanelCounters,
+  type ReviewPhoto,
+  type SalonLoad,
+} from "@/api/api"
 import { toApiError, type ApiError } from "@/api/client"
 import { useApi } from "@/api/useApi"
 import {
@@ -46,6 +57,8 @@ import { Avatar } from "../components/Avatar"
 import { AvatarCropper } from "../components/AvatarCropper"
 import { CrudTable, INPUT, downloadCsv, exportButton, type Option, type Row, type RowActions, type Value } from "../components/CrudTable"
 import { ErrorMessage } from "../components/ErrorMessage"
+import { ModalShell } from "../components/ClientModals"
+import { PhotoLightbox } from "../components/ReviewCard"
 import { BOOKING_STATUS, COUNTERS_CHANGED } from "../components/StatusBadge"
 import { PriceTag } from "../components/PriceTag"
 import { StarRating } from "../components/StarRating"
@@ -402,6 +415,134 @@ function StarToggle({ row, act }: { row: Row; act: RowActions }) {
   )
 }
 
+/** Баллы клиента в таблице; по клику — история и ручное начисление или списание */
+function BonusCell({ row, act }: { row: Row; act: RowActions }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <>
+      <button
+        onClick={() => setOpen(true)}
+        title="История, начислить или списать"
+        className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-gold/30 bg-gold/10 text-gold-dark text-sm font-medium hover:bg-gold/20 transition-colors whitespace-nowrap"
+      >
+        <Gift className="size-3.5" /> {row.bonus_balance}
+      </button>
+      {open && (
+        <BonusModal
+          row={row}
+          onClose={(changed) => {
+            setOpen(false)
+            if (changed) act.reload()
+          }}
+        />
+      )}
+    </>
+  )
+}
+
+function BonusModal({ row, onClose }: { row: Row; onClose: (changed: boolean) => void }) {
+  const summary = useApi(() => adminApi.bonus(row.id))
+  const [spend, setSpend] = useState(true)
+  const [amount, setAmount] = useState("")
+  const [comment, setComment] = useState("")
+  const [error, setError] = useState<ApiError | string | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [changed, setChanged] = useState(false)
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault()
+    const points = Number(amount)
+    if (!Number.isInteger(points) || points <= 0) return setError("Укажите количество баллов — целое число больше нуля.")
+    if (!comment.trim()) return setError("Добавьте комментарий, например «Оплата визита 12.10».")
+    setSaving(true)
+    setError(null)
+    try {
+      await adminApi.addBonus(row.id, { amount: spend ? -points : points, comment: comment.trim() })
+      setAmount("")
+      setComment("")
+      setChanged(true)
+      summary.reload()
+    } catch (err) {
+      setError(toApiError(err))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <ModalShell title={`Баллы: ${clientName(row)}`} onClose={() => onClose(changed)}>
+      <p className="text-3xl font-serif text-foreground">
+        {summary.data ? plural(summary.data.balance, ["балл", "балла", "баллов"]) : "…"}
+      </p>
+
+      <form onSubmit={submit} className="bg-white rounded-2xl border border-rose-100 p-4 space-y-3">
+        <div className="flex gap-2">
+          {[true, false].map((value) => (
+            <button
+              key={String(value)}
+              type="button"
+              onClick={() => setSpend(value)}
+              aria-pressed={spend === value}
+              className={chipCls(spend === value)}
+            >
+              {value ? "Списать" : "Начислить"}
+            </button>
+          ))}
+        </div>
+        <input
+          type="number"
+          min={1}
+          step={1}
+          inputMode="numeric"
+          value={amount}
+          onChange={(e) => setAmount(e.target.value)}
+          placeholder="Сколько баллов"
+          aria-label="Сколько баллов"
+          className={INPUT}
+        />
+        <input
+          value={comment}
+          onChange={(e) => setComment(e.target.value)}
+          maxLength={200}
+          placeholder={spend ? "Оплата визита 12.10" : "Подарок ко дню рождения"}
+          aria-label="Комментарий"
+          className={INPUT}
+        />
+        {error && <ErrorMessage error={error} />}
+        <button
+          type="submit"
+          disabled={saving}
+          className="w-full bg-gold hover:bg-gold-hover text-white py-3 rounded-full font-medium transition-colors disabled:opacity-50"
+        >
+          {saving ? "Сохраняем…" : spend ? "Списать баллы" : "Начислить баллы"}
+        </button>
+      </form>
+
+      <div>
+        <h3 className="font-medium text-foreground mb-2">История</h3>
+        {summary.error && <ErrorMessage error={summary.error} onRetry={summary.reload} />}
+        {summary.data?.operations.length === 0 && <p className="text-sm text-muted-foreground">Операций пока нет.</p>}
+        <ul className="divide-y divide-rose-100">
+          {summary.data?.operations.map((op) => (
+            <li key={op.id} className="flex items-center justify-between gap-4 py-2 text-sm">
+              <span>
+                {op.comment}
+                <span className="block text-xs text-muted-foreground">
+                  {formatDate((op.visit_date ?? op.created_at).slice(0, 10))}
+                </span>
+              </span>
+              <span className={`font-medium whitespace-nowrap ${op.amount > 0 ? "text-green-700" : "text-rose-600"}`}>
+                {op.amount > 0 ? "+" : "−"}
+                {Math.abs(op.amount)}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </ModalShell>
+  )
+}
+
 function ClientsSection() {
   const { user } = useAuth()
   return (
@@ -464,6 +605,7 @@ function ClientsSection() {
         { name: "visits", label: "Визитов", inForm: false },
         { name: "last_visit", label: "Последний визит", inForm: false, render: (r) => (r.last_visit ? formatDate(r.last_visit) : "—") },
         { name: "total_spent", label: "Потрачено", inForm: false, render: (r) => (r.total_spent ? formatPrice(r.total_spent) : "—") },
+        { name: "bonus_balance", label: "Баллы", inForm: false, render: (r, act) => <BonusCell row={r} act={act} /> },
         { name: "master", label: "Карточка мастера", inForm: false, inTable: false },
         { name: "username", label: "Логин", inForm: false, inTable: false },
         { name: "note", label: "Внутренний комментарий", type: "textarea", render: (r) => r.note && <span className="text-rose-700">{r.note}</span> },
@@ -671,6 +813,37 @@ function ModerationCell({ row, act }: { row: Row; act: RowActions }) {
   )
 }
 
+/** Фото к отзыву: открыть крупно или удалить неуместное (текст отзыва остаётся) */
+function ReviewPhotosCell({ row, act }: { row: Row; act: RowActions }) {
+  const [opened, setOpened] = useState<string | null>(null)
+  const photos: ReviewPhoto[] = row.photos
+  if (!photos.length) return <>—</>
+  const remove = (photo: ReviewPhoto) => {
+    if (!confirm("Удалить это фото? Вернуть его будет нельзя.")) return
+    act.run(() => adminApi.deleteReviewPhoto(row.id, photo.id))
+  }
+  return (
+    <div className="flex gap-2">
+      {photos.map((p) => (
+        <div key={p.id} className="relative size-14">
+          <button onClick={() => setOpened(p.url)} aria-label="Открыть фото" className="size-full rounded-lg overflow-hidden border border-rose-100 cursor-zoom-in">
+            <img src={p.url} alt="" className="size-full object-cover" />
+          </button>
+          <button
+            onClick={() => remove(p)}
+            title="Удалить фото"
+            aria-label="Удалить фото"
+            className="absolute -top-2 -right-2 p-1 rounded-full bg-white border border-rose-200 text-muted-foreground hover:text-rose-600 shadow-sm"
+          >
+            <X className="size-3" />
+          </button>
+        </div>
+      ))}
+      {opened && <PhotoLightbox src={opened} onClose={() => setOpened(null)} />}
+    </div>
+  )
+}
+
 function ReviewsSection() {
   return (
     <CrudTable
@@ -710,6 +883,7 @@ function ReviewsSection() {
           ),
         },
         { name: "text", label: "Текст", inForm: false, render: (r) => <p className="min-w-48 max-w-xs whitespace-pre-line">{r.text}</p> },
+        { name: "photos", label: "Фото", inForm: false, render: (r, act) => <ReviewPhotosCell row={r} act={act} /> },
         { name: "status", label: "Статус", type: "select", options: REVIEW_STATUS, render: (r, act) => <ModerationCell row={r} act={act} /> },
         {
           name: "reply",

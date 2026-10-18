@@ -19,6 +19,15 @@ export const validators = {
     return null
   },
 
+  /** Российский номер: 8 900 123-45-67, +7 (900) 123 45 67, 9001234567. Пустой — можно */
+  phone(value: string): string | null {
+    const v = value.trim()
+    if (!v) return null
+    const digits = v.replace(/\D/g, "")
+    const ok = /^\+?[\d\s()-]+$/.test(v) && (digits.length === 10 || (digits.length === 11 && /^[78]/.test(digits)))
+    return ok ? null : "Введите номер в формате +7 900 123‑45‑67" // неразрывно, чтобы номер не переносился
+  },
+
   password(value: string): string | null {
     if (!value) return "Введите пароль"
     if (value.length < 8) return "Не короче 8 символов"

@@ -10,11 +10,18 @@ import { BookingCalendar, SlotPicker } from "./BookingCalendar"
 import { ErrorMessage } from "./ErrorMessage"
 import { PriceTag } from "./PriceTag"
 
-interface BookingWizardProps {
-  onClose: () => void
+/** «Записаться снова»: услуга и мастер из прошлого визита */
+export interface BookingPrefill {
+  serviceId: number
+  employeeId: number
 }
 
-export function BookingWizard({ onClose }: BookingWizardProps) {
+interface BookingWizardProps {
+  onClose: () => void
+  prefill?: BookingPrefill | null
+}
+
+export function BookingWizard({ onClose, prefill }: BookingWizardProps) {
   const [step, setStep] = useState(1)
   const [service, setService] = useState<Service | null>(null)
   const [master, setMaster] = useState<Employee | "any" | null>(null)
@@ -40,6 +47,28 @@ export function BookingWizard({ onClose }: BookingWizardProps) {
     () => (service && date ? bookingApi.price(service.id, date) : Promise.resolve(null)),
     [service?.id, date],
   )
+
+  // «Записаться снова»: сразу к выбору даты. Мастер больше не делает услугу — к выбору мастера,
+  // услугу убрали из каталога — обычная запись с первого шага
+  useEffect(() => {
+    if (!prefill || !services.data) return
+    const svc = services.data.find((s) => s.id === prefill.serviceId)
+    if (!svc) return
+    setService(svc)
+    let cancelled = false
+    catalogApi
+      .employees(svc.id)
+      .then((list) => {
+        if (cancelled) return
+        const same = list.find((e) => e.id === prefill.employeeId)
+        if (same) setMaster(same)
+        setStep(same ? 3 : 2)
+      })
+      .catch(() => !cancelled && setStep(2))
+    return () => {
+      cancelled = true
+    }
+  }, [services.data])
 
   // Шаг 3: свободные слоты. Для «Любой мастер» опрашиваем всех подходящих мастеров
   useEffect(() => {

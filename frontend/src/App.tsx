@@ -10,7 +10,7 @@ import { HomePage } from "./pages/HomePage"
 import { MastersPage } from "./pages/MastersPage"
 import { ServicesPage } from "./pages/ServicesPage"
 import { ProfilePage } from "./pages/ProfilePage"
-import { BookingWizard } from "./components/BookingWizard"
+import { BookingWizard, type BookingPrefill } from "./components/BookingWizard"
 import { AuthModal } from "./components/AuthModal"
 import { RouteError } from "./components/RouteError"
 import { AuthProvider, useAuth } from "./auth/AuthContext"
@@ -18,13 +18,26 @@ import { PanelLayout, panelRoutes } from "./pages/PanelPage"
 import { ReviewsPage } from "./pages/ReviewsPage"
 import { BackToTopButton } from "./components/BackToTopButton"
 import { Avatar } from "./components/Avatar"
+import { formatTime, hoursUntil, relativeDay } from "./lib/format"
 
 function Layout() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [bookingOpen, setBookingOpen] = useState(false)
-  const { user, logout } = useAuth()
+  const { user, logout, refreshUser } = useAuth()
   const [authOpen, setAuthOpen] = useState(false)
   const [resumeBooking, setResumeBooking] = useState(false)
+  const [bookingPrefill, setBookingPrefill] = useState<BookingPrefill | null>(null)
+  const [logoutOpen, setLogoutOpen] = useState(false)
+
+  // запись в ближайшие 24 часа — золотая точка на аватаре и в мобильном меню
+  const next = user?.next_booking
+  const soon =
+    next && hoursUntil(next.date, next.start_time) <= 24
+      ? `Запись ${relativeDay(next.date)} в ${formatTime(next.start_time)}`
+      : null
+  const dot = (
+    <span className="absolute top-0 right-0 size-3 rounded-full bg-gold ring-2 ring-pearl" aria-hidden="true" />
+  )
 
   // Запись только для вошедших: гостю сначала показываем вход
   const openBooking = () => {
@@ -33,6 +46,18 @@ function Layout() {
       setResumeBooking(true)
       setAuthOpen(true)
     }
+  }
+
+  // «Записаться снова» из истории визитов
+  const rebook = (prefill: BookingPrefill) => {
+    setBookingPrefill(prefill)
+    openBooking()
+  }
+
+  const closeBooking = () => {
+    setBookingOpen(false)
+    setBookingPrefill(null)
+    if (user) refreshUser() // новая запись могла стать ближайшей
   }
 
   return (
@@ -112,17 +137,19 @@ function Layout() {
               <>
                 <NavLink
                   to="/profile"
-                  title="Личный кабинет"
-                  className="rounded-full hover:ring-2 hover:ring-gold/40 transition-shadow"
+                  title={soon ?? "Личный кабинет"}
+                  aria-label={soon ? `Личный кабинет. ${soon}` : "Личный кабинет"}
+                  className="relative rounded-full hover:ring-2 hover:ring-gold/40 transition-shadow"
                 >
                   <Avatar
                     src={user.avatar}
                     name={[user.first_name, user.last_name].filter(Boolean).join(" ") || user.username}
                     className="size-9 text-xs"
                   />
+                  {soon && dot}
                 </NavLink>
                 <button
-                  onClick={logout}
+                  onClick={() => setLogoutOpen(true)}
                   title="Выйти"
                   className="p-2 text-muted-foreground hover:text-gold transition-colors"
                 >
@@ -193,9 +220,15 @@ function Layout() {
             <NavLink
               to="/profile"
               onClick={() => setMobileMenuOpen(false)}
-              className="text-lg font-medium text-foreground"
+              className="text-lg font-medium text-foreground flex items-center gap-2"
             >
               Профиль
+              {soon && (
+                <span className="flex items-center gap-1.5 text-sm font-normal text-gold-dark">
+                  <span className="size-2.5 rounded-full bg-gold" aria-hidden="true" />
+                  {soon}
+                </span>
+              )}
             </NavLink>
             {user?.is_staff && (
               <NavLink
@@ -209,7 +242,7 @@ function Layout() {
             {user ? (
               <button
                 onClick={() => {
-                  logout()
+                  setLogoutOpen(true)
                   setMobileMenuOpen(false)
                 }}
                 className="text-lg font-medium text-foreground text-left"
@@ -241,7 +274,7 @@ function Layout() {
       </header>
 
       <main className="flex-1 flex flex-col">
-        <Outlet context={{ openBooking, openAuth: () => setAuthOpen(true) }} />
+        <Outlet context={{ openBooking, rebook, openAuth: () => setAuthOpen(true) }} />
       </main>
 
       {/* Footer */}
@@ -279,10 +312,20 @@ function Layout() {
       {/* Booking Modal */}
       {bookingOpen &&
         (user?.is_blocked ? (
-          <BlockedNotice onClose={() => setBookingOpen(false)} />
+          <BlockedNotice onClose={closeBooking} />
         ) : (
-          <BookingWizard onClose={() => setBookingOpen(false)} />
+          <BookingWizard prefill={bookingPrefill} onClose={closeBooking} />
         ))}
+
+      {logoutOpen && (
+        <LogoutConfirm
+          onClose={() => setLogoutOpen(false)}
+          onConfirm={() => {
+            setLogoutOpen(false)
+            logout()
+          }}
+        />
+      )}
 
       {/* Auth Modal */}
       {authOpen && (
@@ -348,6 +391,39 @@ function BlockedNotice({ onClose }: { onClose: () => void }) {
         >
           Понятно
         </button>
+      </div>
+    </div>
+  )
+}
+
+function LogoutConfirm({ onConfirm, onClose }: { onConfirm: () => void; onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+      <div
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="logout-title"
+        className="bg-white w-full max-w-sm rounded-[2rem] shadow-2xl p-8 text-center space-y-4"
+      >
+        <h2 id="logout-title" className="text-2xl font-serif text-foreground">
+          Выйти из аккаунта?
+        </h2>
+        <p className="text-muted-foreground">Чтобы записаться или посмотреть свои записи, нужно будет войти снова.</p>
+        <div className="flex gap-3 justify-center pt-2">
+          <button
+            onClick={onClose}
+            autoFocus
+            className="px-6 py-3 rounded-full border border-rose-200 text-foreground font-medium hover:bg-rose-50 transition-colors"
+          >
+            Отмена
+          </button>
+          <button
+            onClick={onConfirm}
+            className="bg-gold hover:bg-gold-hover text-white px-8 py-3 rounded-full font-medium transition-colors"
+          >
+            Выйти
+          </button>
+        </div>
       </div>
     </div>
   )

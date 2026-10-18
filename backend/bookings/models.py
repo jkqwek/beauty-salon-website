@@ -131,6 +131,41 @@ class Review(models.Model):
         return f"{self.booking.client} — {self.get_status_display()}"
 
 
+MAX_REVIEW_PHOTOS = 3
+
+
+class ReviewPhoto(models.Model):
+    review = models.ForeignKey(Review, on_delete=models.CASCADE, related_name="photos")
+    image = models.ImageField("Фото", upload_to="reviews/")
+
+    class Meta:
+        verbose_name = "Фото к отзыву"
+        verbose_name_plural = "Фото к отзывам"
+        ordering = ["id"]
+
+
+BONUS_PERCENT = 5  # столько процентов цены выполненного визита возвращается баллами (1 балл = 1 ₽)
+
+
+class BonusOperation(models.Model):
+    """Движение бонусных баллов: + за визит или вручную, − списание при оплате в салоне.
+    Баланс клиента — сумма всех его операций."""
+    client = models.ForeignKey(User, on_delete=models.CASCADE, related_name="bonus_operations")
+    amount = models.IntegerField("Баллы")
+    # начисление за визит; живёт, пока запись в статусе «выполнена»
+    booking = models.OneToOneField(Booking, on_delete=models.CASCADE, null=True, blank=True, related_name="bonus")
+    comment = models.CharField("Комментарий", max_length=200, blank=True)
+    created_at = models.DateTimeField("Дата", auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Бонусная операция"
+        verbose_name_plural = "Бонусные баллы"
+        ordering = ["-created_at", "-id"]
+
+    def __str__(self):
+        return f"{self.client}: {self.amount:+}"
+
+
 class CancellationPolicy(models.Model):
     """Правило отмены: одна строка (pk=1), срок меняется в панели."""
     deadline_hours = models.PositiveIntegerField("Отмена и перенос не позднее чем за, ч", default=24)

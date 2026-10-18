@@ -1,11 +1,13 @@
 from collections import defaultdict
 from datetime import datetime, timedelta
 
-from django.db.models import Avg, Q
+from django.db.models import Avg, Q, Sum
 from django.utils import timezone
 
 from catalog.models import price_on
-from .models import ACTIVE_STATUSES, Booking, CancellationPolicy, SalonClosure, Schedule, TimeOff
+from .models import (
+    ACTIVE_STATUSES, BONUS_PERCENT, BonusOperation, Booking, CancellationPolicy, SalonClosure, Schedule, TimeOff,
+)
 
 SLOT_STEP = timedelta(minutes=15)
 MAX_DAYS_AHEAD = 90  # на сколько дней вперёд можно записаться
@@ -140,3 +142,26 @@ def closure_conflicts(date_from, date_to, open_time=None, close_time=None):
 def conflict_label(b):
     client = b.client.get_full_name() or b.client.username
     return f"{b.date:%d.%m} {b.start_time:%H:%M} — {client}, {b.service.name} ({b.employee.full_name})"
+
+
+def visit_bonus(booking):
+    """Баллы за визит: BONUS_PERCENT от цены (уже со скидкой), дробная часть отбрасывается."""
+    if booking.status != "completed" or not booking.price:
+        return 0
+    return int(booking.price * BONUS_PERCENT / 100)
+
+
+def sync_visit_bonus(booking):
+    """Начисление за визит есть, только пока запись выполнена; сменилась цена — пересчитывается."""
+    points = visit_bonus(booking)
+    if not points:
+        BonusOperation.objects.filter(booking=booking).delete()
+        return
+    BonusOperation.objects.update_or_create(
+        booking=booking,
+        defaults={"client_id": booking.client_id, "amount": points, "comment": f"За визит: {booking.service.name}"},
+    )
+
+
+def bonus_balance(user):
+    return user.bonus_operations.aggregate(total=Sum("amount"))["total"] or 0

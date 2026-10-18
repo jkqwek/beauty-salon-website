@@ -1,5 +1,5 @@
-import { useState, type ReactNode } from "react"
-import { X } from "lucide-react"
+import { useEffect, useState, type ChangeEvent, type ReactNode } from "react"
+import { ImagePlus, X } from "lucide-react"
 import { bookingApi, type Booking } from "@/api/api"
 import { toApiError, type ApiError } from "@/api/client"
 import { useApi } from "@/api/useApi"
@@ -9,7 +9,7 @@ import { ErrorMessage } from "./ErrorMessage"
 import { PriceTag } from "./PriceTag"
 import { StarRating } from "./StarRating"
 
-function ModalShell({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
+export function ModalShell({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
       <div role="dialog" aria-modal="true" aria-label={title} className="bg-rose-50 w-full max-w-lg max-h-[90vh] flex flex-col rounded-[2rem] shadow-2xl overflow-hidden">
@@ -104,13 +104,34 @@ export function RescheduleModal({ booking, onClose, onDone }: { booking: Booking
   )
 }
 
-/** Отзыв о выполненном визите: оценка (если уже есть из бота — подставлена) и текст */
+const MAX_PHOTOS = 3
+const MAX_PHOTO_SIZE = 10 * 1024 * 1024
+
+/** Отзыв о выполненном визите: оценка (если уже есть из бота — подставлена), текст и до 3 фото */
 export function ReviewModal({ booking, onClose, onDone }: { booking: Booking; onClose: () => void; onDone: () => void }) {
   const [rating, setRating] = useState(booking.rating ?? 0)
   const [text, setText] = useState("")
+  const [photos, setPhotos] = useState<File[]>([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<ApiError | string | null>(null)
   const length = text.trim().length
+
+  const [previews, setPreviews] = useState<string[]>([])
+  useEffect(() => {
+    const urls = photos.map((f) => URL.createObjectURL(f))
+    setPreviews(urls)
+    return () => urls.forEach((url) => URL.revokeObjectURL(url))
+  }, [photos])
+
+  const addPhotos = (e: ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? [])
+    e.target.value = "" // чтобы тот же файл можно было выбрать снова
+    const wrong = files.find((f) => !["image/jpeg", "image/png"].includes(f.type) || f.size > MAX_PHOTO_SIZE)
+    if (wrong) return setError(`«${wrong.name}»: подходят только JPG и PNG до 10 МБ.`)
+    if (photos.length + files.length > MAX_PHOTOS) setError(`Можно приложить не больше ${MAX_PHOTOS} фото.`)
+    else setError(null)
+    setPhotos([...photos, ...files].slice(0, MAX_PHOTOS))
+  }
 
   const submit = async () => {
     if (!rating) return setError("Поставьте оценку от 1 до 5.")
@@ -118,7 +139,7 @@ export function ReviewModal({ booking, onClose, onDone }: { booking: Booking; on
     setSaving(true)
     setError(null)
     try {
-      await bookingApi.review(booking.id, { rating, text: text.trim() })
+      await bookingApi.review(booking.id, { rating, text: text.trim(), photos })
       onDone()
     } catch (e) {
       setError(toApiError(e))
@@ -150,7 +171,33 @@ export function ReviewModal({ booking, onClose, onDone }: { booking: Booking; on
         />
         <p className="text-xs text-muted-foreground text-right">{length} / 1000</p>
       </div>
-      <p className="text-xs text-muted-foreground">Отзыв появится на сайте после проверки. Изменить его потом нельзя.</p>
+      <div className="space-y-2">
+        <p className="text-sm font-medium text-foreground">Фото (необязательно)</p>
+        <div className="flex flex-wrap gap-3">
+          {previews.map((url, i) => (
+            <div key={url} className="relative size-20">
+              <img src={url} alt={`Фото ${i + 1}`} className="size-full object-cover rounded-xl border border-rose-100" />
+              <button
+                type="button"
+                onClick={() => setPhotos(photos.filter((_, j) => j !== i))}
+                aria-label={`Убрать фото ${i + 1}`}
+                className="absolute -top-2 -right-2 p-1 rounded-full bg-white border border-rose-200 text-muted-foreground hover:text-rose-600 shadow-sm"
+              >
+                <X className="size-3.5" />
+              </button>
+            </div>
+          ))}
+          {photos.length < MAX_PHOTOS && (
+            <label className="size-20 rounded-xl border-2 border-dashed border-rose-200 hover:border-gold text-muted-foreground hover:text-gold flex flex-col items-center justify-center gap-1 text-xs cursor-pointer transition-colors focus-within:ring-2 focus-within:ring-gold">
+              <ImagePlus className="size-5" />
+              Добавить
+              <input type="file" accept="image/jpeg,image/png" multiple onChange={addPhotos} className="sr-only" />
+            </label>
+          )}
+        </div>
+        <p className="text-xs text-muted-foreground">До {MAX_PHOTOS} фото, JPG или PNG до 10 МБ.</p>
+      </div>
+      <p className="text-xs text-muted-foreground">Отзыв и фото появятся на сайте после проверки. Изменить их потом нельзя.</p>
       {error && <ErrorMessage error={error} />}
       <button onClick={submit} disabled={saving} className={primaryBtn}>
         {saving ? "Отправляем…" : "Отправить отзыв"}

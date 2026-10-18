@@ -1,17 +1,18 @@
 import { useState, type FormEvent } from "react"
-import { useOutletContext } from "react-router"
+import { useOutletContext, useSearchParams } from "react-router"
 import { useAuth } from "@/auth/AuthContext"
-import { authApi, bookingApi, type Booking, type ProfileData, type User as UserType } from "@/api/api"
+import { authApi, bookingApi, catalogApi, type Booking, type ProfileData, type User as UserType } from "@/api/api"
 import { useApi } from "@/api/useApi"
 import { fieldMessages, toApiError, type ApiError } from "@/api/client"
-import { formatDate, formatTime } from "@/lib/format"
-import { validators } from "@/lib/validators"
+import { formatDate, formatPrice, formatTime, hoursUntil, plural, relativeDay } from "@/lib/format"
+import { collectErrors, validators } from "@/lib/validators"
 import { Avatar } from "../components/Avatar"
 import { AvatarCropper } from "../components/AvatarCropper"
+import type { BookingPrefill } from "../components/BookingWizard"
 import { ErrorMessage } from "../components/ErrorMessage"
 import { StatusBadge, isActiveStatus } from "../components/StatusBadge"
 import { RescheduleModal, ReviewModal } from "../components/ClientModals"
-import { User, Calendar, Camera, Clock } from "lucide-react"
+import { Bell, Calendar, Camera, Clock, Gift, RotateCcw, User, type LucideIcon } from "lucide-react"
 
 const REVIEW_BADGE: Record<NonNullable<Booking["review_status"]>, { label: string; cls: string }> = {
   new: { label: "Отзыв на модерации", cls: "bg-yellow-50 text-yellow-800 border-yellow-200" },
@@ -19,12 +20,26 @@ const REVIEW_BADGE: Record<NonNullable<Booking["review_status"]>, { label: strin
   rejected: { label: "Отзыв не опубликован", cls: "bg-rose-50 text-muted-foreground border-rose-200" },
 }
 
-export function ProfilePage() {
-  const [activeTab, setActiveTab] = useState("appointments")
+type Tab = "bookings" | "history" | "bonus" | "profile"
 
-  const { user } = useAuth()
-  const { openAuth } = useOutletContext<{ openAuth: () => void }>()
+const TABS: { id: Tab; label: string; icon: LucideIcon }[] = [
+  { id: "bookings", label: "Мои записи", icon: Calendar },
+  { id: "history", label: "История визитов", icon: Clock },
+  { id: "bonus", label: "Бонусы", icon: Gift },
+  { id: "profile", label: "Редактировать профиль", icon: User },
+]
+
+const POINTS: [string, string, string] = ["балл", "балла", "баллов"]
+
+export function ProfilePage() {
+  const [params, setParams] = useSearchParams()
+  const tab = TABS.find((t) => t.id === params.get("tab"))?.id ?? "bookings"
+  const setTab = (id: Tab) => setParams({ tab: id })
+
+  const { user, refreshUser } = useAuth()
+  const { openAuth, rebook } = useOutletContext<{ openAuth: () => void; rebook: (p: BookingPrefill) => void }>()
   const bookings = useApi(bookingApi.my, [user?.id])
+  const services = useApi(catalogApi.services) // «Записаться снова» — только на услуги, которые ещё есть
   const policy = useApi(bookingApi.cancellationPolicy)
   const [cancelError, setCancelError] = useState<ApiError | null>(null)
   const [rescheduling, setRescheduling] = useState<Booking | null>(null)
@@ -45,18 +60,26 @@ export function ProfilePage() {
     )
   }
 
-  const isUpcoming = (b: Booking) =>
-    isActiveStatus(b.status) && new Date(`${b.date}T${b.start_time}`) > new Date()
-  const upcoming = (bookings.data ?? []).filter(isUpcoming)
+  const isUpcoming = (b: Booking) => isActiveStatus(b.status) && hoursUntil(b.date, b.start_time) > 0
+  const upcoming = (bookings.data ?? []).filter(isUpcoming).reverse() // ближайшая — первой
   const history = (bookings.data ?? []).filter((b) => !isUpcoming(b))
+  const completed = history.filter((b) => b.status === "completed")
+  const spent = completed.reduce((sum, b) => sum + Number(b.price ?? 0), 0)
+  const serviceIds = new Set((services.data ?? []).map((s) => s.id))
+  const nearest = upcoming[0]
   const displayName = [user.first_name, user.last_name].filter(Boolean).join(" ") || user.username
+
+  const changed = () => {
+    bookings.reload()
+    refreshUser() // напоминание в шапке
+  }
 
   const cancel = async (id: number) => {
     if (!confirm("Отменить запись?")) return
     setCancelError(null)
     try {
       await bookingApi.cancel(id)
-      bookings.reload()
+      changed()
     } catch (e) {
       setCancelError(toApiError(e)) // например, поздно по правилу отмены
     }
@@ -73,185 +96,213 @@ export function ProfilePage() {
               {displayName}
             </h1>
             <p className="text-muted-foreground">{user.email}</p>
+            <button
+              onClick={() => setTab("bonus")}
+              className="mt-3 inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-gold/10 border border-gold/30 text-gold-dark text-sm font-medium hover:bg-gold/20 transition-colors"
+            >
+              <Gift className="size-4" /> {plural(user.bonus_balance, POINTS)}
+            </button>
           </div>
         </div>
       </div>
 
-      <div className="max-w-5xl mx-auto px-6 pt-10 flex flex-col md:flex-row gap-10">
-        {/* Sidebar */}
-        <aside className="w-full md:w-64 shrink-0">
-          <div className="bg-white rounded-3xl border border-rose-100 overflow-hidden flex flex-col p-2">
-            <button
-              onClick={() => setActiveTab("appointments")}
-              className={`flex items-center gap-3 px-6 py-4 rounded-2xl text-left font-medium transition-colors ${
-                activeTab === "appointments"
-                  ? "bg-rose-50 text-gold"
-                  : "text-muted-foreground hover:bg-rose-50/50"
-              }`}
-            >
-              <Calendar className="size-5" /> Записи
-            </button>
+      <div className="max-w-5xl mx-auto px-6 pt-10">
+        {nearest && <NextBookingCard booking={nearest} onMore={tab === "bookings" ? null : () => setTab("bookings")} />}
 
-            <button
-              onClick={() => setActiveTab("history")}
-              className={`flex items-center gap-3 px-6 py-4 rounded-2xl text-left font-medium transition-colors ${
-                activeTab === "history"
-                  ? "bg-rose-50 text-gold"
-                  : "text-muted-foreground hover:bg-rose-50/50"
-              }`}
-            >
-              <Clock className="size-5" /> История визитов
-            </button>
+        <div className="flex flex-col md:flex-row gap-10">
+          {/* Sidebar */}
+          <aside className="w-full md:w-64 shrink-0">
+            <nav className="bg-white rounded-3xl border border-rose-100 overflow-hidden flex flex-col p-2">
+              {TABS.map(({ id, label, icon: Icon }) => (
+                <button
+                  key={id}
+                  onClick={() => setTab(id)}
+                  aria-current={tab === id ? "page" : undefined}
+                  className={`flex items-center gap-3 px-6 py-4 rounded-2xl text-left font-medium transition-colors ${
+                    tab === id ? "bg-rose-50 text-gold" : "text-muted-foreground hover:bg-rose-50/50"
+                  }`}
+                >
+                  <Icon className="size-5" /> {label}
+                </button>
+              ))}
+            </nav>
+          </aside>
 
-            <button
-              onClick={() => setActiveTab("profile")}
-              className={`flex items-center gap-3 px-6 py-4 rounded-2xl text-left font-medium transition-colors ${
-                activeTab === "profile"
-                  ? "bg-rose-50 text-gold"
-                  : "text-muted-foreground hover:bg-rose-50/50"
-              }`}
-            >
-              <User className="size-5" /> Редактировать профиль
-            </button>
-          </div>
-        </aside>
+          {/* Content */}
+          <main className="flex-1 min-w-0">
+            {tab === "bookings" && (
+              <div>
+                <h2 className="text-2xl font-serif text-foreground mb-6">
+                  Мои записи
+                </h2>
 
-        {/* Content */}
-        <main className="flex-1">
-          {activeTab === "appointments" && (
-            <div>
-              <h2 className="text-2xl font-serif text-foreground mb-6">
-                Ближайшие записи
-              </h2>
+                {policy.data && (
+                  <p className="text-sm text-muted-foreground -mt-4 mb-6">
+                    {policy.data.deadline_hours
+                      ? `Отменить или перенести запись можно не позднее чем за ${policy.data.deadline_hours} ч до визита.`
+                      : "Отменить или перенести запись можно в любой момент до начала визита."}
+                  </p>
+                )}
 
-              {policy.data && (
-                <p className="text-sm text-muted-foreground -mt-4 mb-6">
-                  {policy.data.deadline_hours
-                    ? `Отменить или перенести запись можно не позднее чем за ${policy.data.deadline_hours} ч до визита.`
-                    : "Отменить или перенести запись можно в любой момент до начала визита."}
-                </p>
-              )}
+                {cancelError && <ErrorMessage error={cancelError} />}
 
-              {cancelError && <ErrorMessage error={cancelError} />}
+                {bookings.loading && (
+                  <p className="text-muted-foreground">Загрузка…</p>
+                )}
 
-              {bookings.loading && (
-                <p className="text-muted-foreground">Загрузка…</p>
-              )}
+                {bookings.error && (
+                  <ErrorMessage
+                    error={bookings.error}
+                    onRetry={bookings.reload}
+                  />
+                )}
 
-              {bookings.error && (
-                <ErrorMessage
-                  error={bookings.error}
-                  onRetry={bookings.reload}
-                />
-              )}
+                {!bookings.loading && !bookings.error && upcoming.length === 0 && (
+                  <p className="text-muted-foreground">
+                    Предстоящих записей нет.
+                  </p>
+                )}
 
-              {!bookings.loading && !bookings.error && upcoming.length === 0 && (
-                <p className="text-muted-foreground">
-                  Предстоящих записей нет.
-                </p>
-              )}
+                <div className="space-y-4">
+                  {upcoming.map((b) => (
+                    <div
+                      key={b.id}
+                      className="bg-white border border-gold/30 rounded-3xl p-6 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-6 relative overflow-hidden"
+                    >
+                      <div className="absolute left-0 top-0 bottom-0 w-2 bg-gold"></div>
 
-              <div className="space-y-4">
-                {upcoming.map((b) => (
-                  <div
-                    key={b.id}
-                    className="bg-white border border-gold/30 rounded-3xl p-6 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-6 relative overflow-hidden"
-                  >
-                    <div className="absolute left-0 top-0 bottom-0 w-2 bg-gold"></div>
+                      <div>
+                        <div className="flex flex-wrap items-center gap-2 text-gold font-medium mb-1">
+                          <Calendar className="size-4" />{" "}
+                          {formatDate(b.date)} • {formatTime(b.start_time)}
+                          <StatusBadge status={b.status} />
+                        </div>
 
-                    <div>
-                      <div className="flex flex-wrap items-center gap-2 text-gold font-medium mb-1">
-                        <Calendar className="size-4" />{" "}
-                        {formatDate(b.date)} • {formatTime(b.start_time)}
-                        <StatusBadge status={b.status} />
+                        <h3 className="text-xl font-serif text-foreground mb-2">
+                          {b.service_name}
+                        </h3>
+
+                        <p className="text-muted-foreground flex items-center gap-2">
+                          <User className="size-4" /> {b.employee_name}
+                        </p>
                       </div>
 
-                      <h3 className="text-xl font-serif text-foreground mb-2">
-                        {b.service_name}
-                      </h3>
-
-                      <p className="text-muted-foreground flex items-center gap-2">
-                        <User className="size-4" /> {b.employee_name}
-                      </p>
-                    </div>
-
-                    <div className="flex items-center gap-3">
-                      <button
-                        onClick={() => setRescheduling(b)}
-                        className="px-6 py-2 rounded-full border border-gold text-gold font-medium hover:bg-gold/10 transition-colors"
-                      >
-                        Перенести
-                      </button>
-
-                      <button
-                        onClick={() => cancel(b.id)}
-                        className="px-6 py-2 rounded-full bg-rose-50 border border-rose-200 text-rose-600 font-medium hover:bg-rose-100 transition-colors"
-                      >
-                        Отменить
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {activeTab === "history" && (
-            <div>
-              <h2 className="text-2xl font-serif text-foreground mb-6">
-                История визитов
-              </h2>
-
-              <div className="space-y-4">
-                {history.map((visit) => (
-                  <div
-                    key={visit.id}
-                    className="bg-white border border-rose-100 rounded-3xl p-6 shadow-sm flex items-center justify-between"
-                  >
-                    <div>
-                      <h3 className="text-lg font-serif text-foreground mb-1">
-                        {visit.service_name}
-                      </h3>
-
-                      <p className="text-sm text-muted-foreground mb-2">
-                        {formatDate(visit.date)} • {visit.employee_name}
-                      </p>
-
-                      <StatusBadge status={visit.status} />
-                    </div>
-
-                    {visit.review_status ? (
-                      <span
-                        className={`px-3 py-1 rounded-full border text-xs font-medium whitespace-nowrap ${REVIEW_BADGE[visit.review_status].cls}`}
-                      >
-                        {REVIEW_BADGE[visit.review_status].label}
-                      </span>
-                    ) : (
-                      visit.status === "completed" && (
+                      <div className="flex items-center gap-3">
                         <button
-                          onClick={() => setReviewing(visit)}
-                          className="px-5 py-2 rounded-full border border-gold text-gold text-sm font-medium hover:bg-gold/10 transition-colors whitespace-nowrap"
+                          onClick={() => setRescheduling(b)}
+                          className="px-6 py-2 rounded-full border border-gold text-gold font-medium hover:bg-gold/10 transition-colors"
                         >
-                          Оставить отзыв
+                          Перенести
                         </button>
-                      )
-                    )}
-                  </div>
-                ))}
+
+                        <button
+                          onClick={() => cancel(b.id)}
+                          className="px-6 py-2 rounded-full bg-rose-50 border border-rose-200 text-rose-600 font-medium hover:bg-rose-100 transition-colors"
+                        >
+                          Отменить
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
-          )}
+            )}
 
-          {activeTab === "profile" && (
-            <div>
-              <h2 className="text-2xl font-serif text-foreground mb-6">
-                Редактировать профиль
-              </h2>
+            {tab === "history" && (
+              <div>
+                <h2 className="text-2xl font-serif text-foreground mb-6">
+                  История визитов
+                </h2>
 
-              <ProfileForm user={user} />
-            </div>
-          )}
-        </main>
+                {bookings.loading && <p className="text-muted-foreground">Загрузка…</p>}
+                {bookings.error && <ErrorMessage error={bookings.error} onRetry={bookings.reload} />}
+                {bookings.data && history.length === 0 && (
+                  <p className="text-muted-foreground">Визитов пока нет.</p>
+                )}
+
+                {history.length > 0 && (
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+                    <SummaryTile label="Визитов" value={String(completed.length)} />
+                    <SummaryTile label="Потрачено всего" value={formatPrice(String(spent))} />
+                    <SummaryTile
+                      label="Средний чек"
+                      value={completed.length ? formatPrice(String(Math.round(spent / completed.length))) : "—"}
+                    />
+                  </div>
+                )}
+
+                <div className="space-y-4">
+                  {history.map((visit) => {
+                    const cancelled = visit.status === "cancelled"
+                    const canRebook = (cancelled || visit.status === "completed") && serviceIds.has(visit.service)
+                    return (
+                      <div
+                        key={visit.id}
+                        className="bg-white border border-rose-100 rounded-3xl p-6 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+                      >
+                        <div className={cancelled ? "opacity-60" : ""}>
+                          <h3 className="text-lg font-serif text-foreground mb-1">
+                            {visit.service_name}
+                          </h3>
+
+                          <p className="text-sm text-muted-foreground mb-2">
+                            {formatDate(visit.date)} • {visit.employee_name}
+                          </p>
+
+                          <StatusBadge status={visit.status} />
+                        </div>
+
+                        <div className="flex flex-col items-start sm:items-end gap-3">
+                          {visit.status === "completed" && visit.price && (
+                            <p className="text-xl font-serif text-foreground">{formatPrice(visit.price)}</p>
+                          )}
+                          <div className="flex flex-wrap gap-2 sm:justify-end">
+                            {canRebook && (
+                              <button
+                                onClick={() => rebook({ serviceId: visit.service, employeeId: visit.employee })}
+                                className="inline-flex items-center gap-1.5 px-5 py-2 rounded-full bg-gold hover:bg-gold-hover text-white text-sm font-medium transition-colors whitespace-nowrap"
+                              >
+                                <RotateCcw className="size-4" /> Записаться снова
+                              </button>
+                            )}
+                            {visit.review_status ? (
+                              <span
+                                className={`px-3 py-2 rounded-full border text-xs font-medium whitespace-nowrap ${REVIEW_BADGE[visit.review_status].cls}`}
+                              >
+                                {REVIEW_BADGE[visit.review_status].label}
+                              </span>
+                            ) : (
+                              visit.status === "completed" && (
+                                <button
+                                  onClick={() => setReviewing(visit)}
+                                  className="px-5 py-2 rounded-full border border-gold text-gold text-sm font-medium hover:bg-gold/10 transition-colors whitespace-nowrap"
+                                >
+                                  Оставить отзыв
+                                </button>
+                              )
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
+            {tab === "bonus" && <BonusTab balance={user.bonus_balance} />}
+
+            {tab === "profile" && (
+              <div>
+                <h2 className="text-2xl font-serif text-foreground mb-6">
+                  Редактировать профиль
+                </h2>
+
+                <ProfileForm user={user} />
+              </div>
+            )}
+          </main>
+        </div>
       </div>
 
       {rescheduling && (
@@ -260,7 +311,7 @@ export function ProfilePage() {
           onClose={() => setRescheduling(null)}
           onDone={() => {
             setRescheduling(null)
-            bookings.reload()
+            changed()
           }}
         />
       )}
@@ -273,6 +324,98 @@ export function ProfilePage() {
             bookings.reload()
           }}
         />
+      )}
+    </div>
+  )
+}
+
+/** Напоминание о ближайшей записи; меньше суток до визита — выделено ярче */
+function NextBookingCard({ booking: b, onMore }: { booking: Booking; onMore: (() => void) | null }) {
+  const urgent = hoursUntil(b.date, b.start_time) <= 24
+  return (
+    <div
+      role="status"
+      className={`mb-8 rounded-3xl border p-5 flex flex-wrap items-center gap-4 ${
+        urgent ? "bg-gold/10 border-gold shadow-sm" : "bg-white border-rose-100"
+      }`}
+    >
+      <div
+        className={`size-12 rounded-full flex items-center justify-center shrink-0 ${
+          urgent ? "bg-gold text-white" : "bg-rose-50 text-gold"
+        }`}
+      >
+        <Bell className="size-6" />
+      </div>
+      <div className="flex-1 min-w-48">
+        <p className="font-medium text-foreground flex flex-wrap items-center gap-2">
+          Ближайшая запись: {relativeDay(b.date)} в {formatTime(b.start_time)}
+          <StatusBadge status={b.status} />
+        </p>
+        <p className="text-sm text-muted-foreground">
+          {b.service_name} · мастер {b.employee_name}
+        </p>
+      </div>
+      {onMore && (
+        <button onClick={onMore} className="text-sm font-medium text-gold-dark hover:underline">
+          Подробнее
+        </button>
+      )}
+    </div>
+  )
+}
+
+function SummaryTile({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="bg-white rounded-3xl border border-rose-100 p-5">
+      <p className="text-sm text-muted-foreground mb-1">{label}</p>
+      <p className="text-2xl font-serif text-foreground">{value}</p>
+    </div>
+  )
+}
+
+/** Баланс, правило программы и история начислений и списаний */
+function BonusTab({ balance }: { balance: number }) {
+  const bonus = useApi(authApi.bonus, [balance])
+  return (
+    <div>
+      <h2 className="text-2xl font-serif text-foreground mb-6">Бонусы</h2>
+
+      <div className="bg-white border border-gold/40 rounded-3xl p-8 shadow-sm mb-8 flex flex-col sm:flex-row sm:items-center gap-6">
+        <div className="size-16 rounded-full bg-gold/10 text-gold flex items-center justify-center shrink-0">
+          <Gift className="size-8" />
+        </div>
+        <div>
+          <p className="text-4xl font-serif text-foreground">{plural(balance, POINTS)}</p>
+          {bonus.data && (
+            <p className="text-muted-foreground mt-2">
+              {bonus.data.percent}% от стоимости каждого визита возвращается баллами, 1 балл = 1 ₽.
+              Потратить баллы можно при оплате в салоне — скажите об этом администратору.
+            </p>
+          )}
+        </div>
+      </div>
+
+      <h3 className="text-xl font-serif text-foreground mb-4">История операций</h3>
+      {bonus.loading && !bonus.data && <p className="text-muted-foreground">Загрузка…</p>}
+      {bonus.error && <ErrorMessage error={bonus.error} onRetry={bonus.reload} />}
+      {bonus.data?.operations.length === 0 && (
+        <p className="text-muted-foreground">Операций пока нет. Баллы начислятся после первого визита.</p>
+      )}
+      {!!bonus.data?.operations.length && (
+        <ul className="bg-white border border-rose-100 rounded-3xl divide-y divide-rose-50">
+          {bonus.data.operations.map((op) => (
+            <li key={op.id} className="flex items-center justify-between gap-4 px-6 py-4">
+              <div>
+                <p className="text-foreground">{op.comment}</p>
+                <p className="text-xs text-muted-foreground">{formatDate((op.visit_date ?? op.created_at).slice(0, 10))}</p>
+              </div>
+              <span className={`font-medium whitespace-nowrap ${op.amount > 0 ? "text-green-700" : "text-rose-600"}`}>
+                {op.amount > 0 ? "+" : "−"}
+                {Math.abs(op.amount)}
+              </span>
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   )
@@ -303,8 +446,8 @@ function ProfileForm({ user }: { user: UserType }) {
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
-    const emailError = validators.email(values.email)
-    if (emailError) return setErrors({ email: emailError })
+    const found = collectErrors({ email: validators.email(values.email), phone: validators.phone(values.phone) })
+    if (Object.keys(found).length) return setErrors(found)
     setSaving(true)
     setFormError(null)
     try {
@@ -322,7 +465,7 @@ function ProfileForm({ user }: { user: UserType }) {
     }
   }
 
-  const field = (key: keyof ProfileData, label: string, type: string, autoComplete: string) => (
+  const field = (key: keyof ProfileData, label: string, type: string, autoComplete: string, placeholder?: string) => (
     <div className="space-y-2">
       <label htmlFor={`profile-${key}`} className="text-sm font-medium text-foreground">
         {label}
@@ -333,6 +476,7 @@ function ProfileForm({ user }: { user: UserType }) {
         value={values[key]}
         onChange={set(key)}
         autoComplete={autoComplete}
+        placeholder={placeholder}
         aria-invalid={Boolean(errors[key])}
         className={`w-full px-4 py-3 rounded-xl border bg-white focus:outline-none focus:ring-1 transition-shadow ${
           errors[key] ? "border-rose-400 focus:border-rose-500 focus:ring-rose-500" : "border-rose-200 focus:border-gold focus:ring-gold"
@@ -366,7 +510,7 @@ function ProfileForm({ user }: { user: UserType }) {
           {field("first_name", "Имя", "text", "given-name")}
           {field("last_name", "Фамилия", "text", "family-name")}
           {field("email", "Email", "email", "email")}
-          {field("phone", "Телефон", "tel", "tel")}
+          {field("phone", "Телефон", "tel", "tel", "+7 900 123-45-67")}
         </div>
         <div className="pt-4 flex items-center gap-4">
           <button

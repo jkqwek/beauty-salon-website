@@ -12,7 +12,7 @@ from rest_framework.test import APITestCase
 
 from accounts.models import ClientProfile
 from catalog.models import Employee, Promotion, Service
-from .models import Booking, CancellationPolicy, SalonClosure, Schedule, TimeOff
+from .models import Booking, CancellationPolicy, Review, SalonClosure, Schedule, TimeOff
 
 User = get_user_model()
 
@@ -142,7 +142,7 @@ class StaffPanelTests(APITestCase):
         url = f"/api/admin/users/{self.buyer.id}/"
         self.client.patch(url, {"phone": "+7 (999) 123-45-67"})
         user = self.client.patch(url, {"note": "Любит кофе"}).json()
-        self.assertEqual((user["phone"], user["note"]), ("+7 (999) 123-45-67", "Любит кофе"))  # телефон не затёрся
+        self.assertEqual((user["phone"], user["note"]), ("+79991234567", "Любит кофе"))  # телефон не затёрся
         self.assertEqual(
             (user["visits"], user["last_visit"], user["total_spent"]),
             (2, str(today - timedelta(days=3)), "2000.00"),  # завершённые визиты ко всем мастерам
@@ -245,7 +245,7 @@ class AdminPanelV2Tests(APITestCase):
         self.client.force_authenticate(self.buyer)
         self.assertEqual(self.client.patch("/api/auth/me/", {"email": "TAKEN@x.ru"}).status_code, 400)
         me = self.client.patch("/api/auth/me/", {"first_name": "Анна", "phone": "+7 999 000-00-00"}).json()
-        self.assertEqual((me["first_name"], me["phone"], me["email"]), ("Анна", "+7 999 000-00-00", "anna@x.ru"))
+        self.assertEqual((me["first_name"], me["phone"], me["email"]), ("Анна", "+79990000000", "anna@x.ru"))
 
         def image(fmt, size=(1200, 800)):
             buf = BytesIO()
@@ -416,3 +416,102 @@ class SalonV3Tests(APITestCase):
         self.assertEqual((stats["total"], stats["by_status"]["cancelled"], stats["expected_revenue"]), (2, 1, "2000.00"))
         counters = self.client.get("/api/admin/counters/").json()
         self.assertEqual((counters["today_bookings"], counters["pending_bookings"], counters["new_reviews"]), (2, 1, 0))
+
+
+def image_file(fmt="PNG", size=(40, 30)):
+    buf = BytesIO()
+    Image.new("RGB", size, "red").save(buf, fmt)
+    return SimpleUploadedFile(f"a.{fmt.lower()}", buf.getvalue())
+
+
+class ClientCabinetTests(APITestCase):
+    """Личный кабинет: бонусные баллы, ближайшая запись, телефон, фото к отзыву."""
+
+    def setUp(self):
+        self.staff = User.objects.create_user("boss", password="x", is_staff=True, is_superuser=True)
+        self.master = Employee.objects.create(full_name="Мастер", specialization="—")
+        self.service = Service.objects.create(name="Стрижка", price=1999, duration_minutes=60)
+        self.buyer = User.objects.create_user("anna", password="x")
+        self.today = timezone.localdate()
+
+    def booking(self, day, status="completed", price=1999):
+        return Booking.objects.create(client=self.buyer, employee=self.master, service=self.service, price=price,
+                                      date=day, start_time=time(10), end_time=time(11), status=status)
+
+    def as_user(self, user):
+        self.client.force_authenticate(User.objects.get(pk=user.pk))
+
+    def balance(self):
+        self.as_user(self.buyer)
+        return self.client.get("/api/auth/me/bonus/").json()["balance"]
+
+    def test_bonus_follows_booking_status(self):
+        b = self.booking(self.today - timedelta(days=1), status="confirmed")
+        self.assertEqual(self.balance(), 0)
+        b.status = "completed"
+        b.save()
+        self.assertEqual(self.balance(), 99)  # 5% от 1999, дробная часть отбрасывается
+        b.price = 2000
+        b.save()
+        self.assertEqual(self.balance(), 100)
+        self.as_user(self.staff)  # сотрудник ошибся статусом — начисление снимается
+        self.client.patch(f"/api/admin/bookings/{b.id}/", {"status": "cancelled"})
+        self.assertEqual(self.balance(), 0)
+
+    def test_staff_adjusts_bonus(self):
+        self.booking(self.today - timedelta(days=1))
+        self.booking(self.today - timedelta(days=2))
+        url = f"/api/admin/users/{self.buyer.id}/bonus/"
+        self.as_user(self.staff)
+        self.assertEqual(self.client.post(url, {"amount": -500, "comment": "Оплата"}).status_code, 400)
+        self.assertEqual(self.client.post(url, {"amount": -50, "comment": ""}).status_code, 400)
+        r = self.client.post(url, {"amount": -50, "comment": "Оплата визита"})
+        self.assertEqual(r.json()["balance"], 148)
+        self.assertEqual(r.json()["operations"][0]["comment"], "Оплата визита")
+        # колонка в списке клиентов не размножается из-за JOIN с записями
+        row = next(u for u in self.client.get("/api/admin/users/").json() if u["id"] == self.buyer.id)
+        self.assertEqual((row["bonus_balance"], row["visits"]), (148, 2))
+
+    def test_me_next_booking_and_phone(self):
+        self.booking(self.today + timedelta(days=3), status="pending")
+        soon = self.booking(self.today + timedelta(days=1), status="confirmed")
+        self.booking(self.today + timedelta(days=2), status="cancelled")
+        self.as_user(self.buyer)
+        self.assertEqual(self.client.get("/api/auth/me/").json()["next_booking"]["id"], soon.id)
+
+        for raw in ("8 900 123-45-67", "+7 (900) 123 45 67", "9001234567"):
+            r = self.client.patch("/api/auth/me/", {"phone": raw})
+            self.assertEqual(r.json()["phone"], "+79001234567", raw)
+        for bad in ("12345", "8 900 abc 45 67", "+1 900 123 45 67 89"):
+            self.assertEqual(self.client.patch("/api/auth/me/", {"phone": bad}).status_code, 400, bad)
+        self.assertEqual(self.client.patch("/api/auth/me/", {"phone": ""}).json()["phone"], "")
+
+    def test_review_photos(self):
+        with tempfile.TemporaryDirectory() as media, override_settings(MEDIA_ROOT=media):
+            b1 = self.booking(self.today - timedelta(days=1))
+            b2 = self.booking(self.today - timedelta(days=2))
+            self.as_user(self.buyer)
+            url = lambda b: f"/api/bookings/{b.id}/review/"
+            text = "Всё понравилось, спасибо!"
+
+            too_many = [image_file() for _ in range(4)]
+            r = self.client.post(url(b1), {"rating": 5, "text": text, "photos": too_many}, format="multipart")
+            self.assertEqual(r.status_code, 400)
+            bad = [image_file(), SimpleUploadedFile("a.png", b"not an image")]
+            r = self.client.post(url(b1), {"rating": 5, "text": text, "photos": bad}, format="multipart")
+            self.assertEqual(r.status_code, 400)
+            self.assertFalse(Review.objects.exists())  # отзыв не создан наполовину
+
+            r = self.client.post(url(b1), {"rating": 5, "text": text, "photos": [image_file(), image_file("JPEG")]},
+                                 format="multipart")
+            self.assertEqual(r.status_code, 201)
+            self.assertEqual(self.client.post(url(b2), {"rating": 4, "text": text}).status_code, 201)  # без фото
+
+            self.as_user(self.staff)
+            review = Review.objects.get(booking=b1)
+            photos = next(r for r in self.client.get("/api/admin/reviews/").json() if r["id"] == review.id)["photos"]
+            self.assertEqual(len(photos), 2)
+            path = review.photos.get(pk=photos[0]["id"]).image.path
+            r = self.client.delete(f"/api/admin/reviews/{review.id}/photos/{photos[0]['id']}/")
+            self.assertEqual(len(r.json()["photos"]), 1)
+            self.assertFalse(os.path.exists(path))

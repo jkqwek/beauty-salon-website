@@ -1,3 +1,4 @@
+import { t } from "@/lib/i18n"
 import { NavLink } from "react-router"
 import { BadgePercent, Info } from "lucide-react"
 import { bookingApi, promotionsApi, reviewsApi, type Closure } from "@/api/api"
@@ -10,8 +11,10 @@ const period = (from: string, to: string) =>
 
 const closureText = (c: Closure) =>
   c.open_time && c.close_time
-    ? `${period(c.date_from, c.date_to)} — ${c.name}: работаем с ${formatTime(c.open_time)} до ${formatTime(c.close_time)}`
-    : `${period(c.date_from, c.date_to)} салон не работает — ${c.name}`
+    ? t("{period} — {name}: работаем с {from} до {to}", {
+        period: period(c.date_from, c.date_to), name: c.name, from: formatTime(c.open_time), to: formatTime(c.close_time),
+      })
+    : t("{period} салон не работает — {name}", { period: period(c.date_from, c.date_to), name: c.name })
 
 /** Баннер о закрытии или сокращённом дне в ближайшие 7 дней — чтобы никто не пришёл к закрытой двери */
 export function ClosureBanner() {
@@ -38,8 +41,8 @@ export function PromotionsSection({ onBook }: { onBook: () => void }) {
     <section className="py-20 bg-pearl">
       <div className="max-w-7xl mx-auto px-6">
         <div className="text-center mb-12">
-          <span className="text-gold font-medium tracking-widest uppercase text-sm mb-4 block">Специальные предложения</span>
-          <h2 className="text-4xl md:text-5xl font-serif text-foreground">Акции</h2>
+          <span className="text-gold font-medium tracking-widest uppercase text-sm mb-4 block">{t("Специальные предложения")}</span>
+          <h2 className="text-4xl md:text-5xl font-serif text-foreground">{t("Акции")}</h2>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {data.map((p) => (
@@ -52,16 +55,16 @@ export function PromotionsSection({ onBook }: { onBook: () => void }) {
               </div>
               {p.description && <p className="text-muted-foreground mb-4">{p.description}</p>}
               <p className="text-sm text-foreground mb-1">
-                {p.services.length ? p.services.join(", ") : "На все услуги"}
+                {p.services.length ? p.services.map((n) => t(n)).join(", ") : t("На все услуги")}
               </p>
               <p className="text-sm text-muted-foreground mb-6 flex-1">
-                {p.is_current ? `До ${formatDayMonth(p.date_to)}` : `Скоро: ${period(p.date_from, p.date_to)}`}
+                {p.is_current ? t("До {date}", { date: formatDayMonth(p.date_to) }) : t("Скоро: {period}", { period: period(p.date_from, p.date_to) })}
               </p>
               <button
                 onClick={onBook}
                 className="self-start px-6 py-2.5 rounded-full border-2 border-gold text-gold-dark font-medium hover:bg-gold hover:text-white transition-colors"
               >
-                Записаться
+                {t("Записаться")}
               </button>
             </article>
           ))}
@@ -80,11 +83,11 @@ export function ReviewsPreview() {
       <div className="max-w-7xl mx-auto px-6">
         <div className="flex flex-col md:flex-row items-end justify-between mb-12 gap-6">
           <div>
-            <span className="text-gold font-medium tracking-widest uppercase text-sm mb-4 block">Нам доверяют</span>
-            <h2 className="text-4xl md:text-5xl font-serif text-foreground">Отзывы клиентов</h2>
+            <span className="text-gold font-medium tracking-widest uppercase text-sm mb-4 block">{t("Нам доверяют")}</span>
+            <h2 className="text-4xl md:text-5xl font-serif text-foreground">{t("Отзывы клиентов")}</h2>
           </div>
           <NavLink to="/reviews" className="inline-block px-8 py-3 rounded-full border-2 border-gold text-gold font-medium hover:bg-gold hover:text-white transition-colors">
-            Все отзывы
+            {t("Все отзывы")}
           </NavLink>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">

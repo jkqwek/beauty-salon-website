@@ -1,3 +1,4 @@
+import { t } from "@/lib/i18n"
 import { NavLink, useOutletContext } from "react-router"
 import { catalogApi } from "@/api/api"
 import { useApi } from "@/api/useApi"
@@ -14,8 +15,8 @@ export function MastersPage() {
 
   const MASTERS = (data ?? []).map((e) => ({
     id: e.id,
-    name: e.full_name,
-    role: e.specialization,
+    name: t(e.full_name),
+    role: t(e.specialization),
     image: masterPhoto(e) ?? undefined,
     rating: e.rating ? Number(e.rating) : undefined, // средняя оценка клиентов (сайт и бот)
     reviews: e.reviews_count ?? 0,
@@ -27,18 +28,17 @@ export function MastersPage() {
       {/* Header */}
       <div className="bg-rose-50 border-b border-rose-100 py-16 px-6 text-center">
         <h1 className="text-4xl md:text-5xl font-serif text-foreground mb-4">
-          Наши мастера
+          {t("Наши мастера")}
         </h1>
 
         <p className="text-muted-foreground max-w-2xl mx-auto">
-          Команда отобранных вручную экспертов привносит страсть, точность и
-          артистизм в каждую процедуру.
+          {t("Команда отобранных вручную экспертов привносит страсть, точность и артистизм в каждую процедуру.")}
         </p>
       </div>
 
       <div className="max-w-7xl mx-auto px-6 pt-16">
         {loading && (
-          <p className="text-center text-muted-foreground">Загрузка…</p>
+          <p className="text-center text-muted-foreground">{t("Загрузка…")}</p>
         )}
 
         {error && <ErrorMessage error={error} onRetry={reload} />}
@@ -78,7 +78,7 @@ export function MastersPage() {
 
               {master.reviews > 0 ? (
                 <NavLink to={`/reviews?master=${master.id}`} className="text-sm text-gold-dark hover:underline mb-4">
-                  Отзывы ({master.reviews})
+                  {t("Отзывы")} ({master.reviews})
                 </NavLink>
               ) : (
                 <span className="mb-4" />
@@ -99,7 +99,7 @@ export function MastersPage() {
                 onClick={openBooking}
                 className="w-full border-2 border-gold text-gold font-medium hover:bg-gold hover:text-white px-6 py-3 rounded-full transition-colors"
               >
-                Профиль / Записаться
+                {t("Профиль / Записаться")}
               </button>
             </div>
           ))}

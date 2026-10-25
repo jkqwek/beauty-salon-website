@@ -1,3 +1,4 @@
+import { t } from "@/lib/i18n"
 import { useEffect, useState } from "react"
 import { NavLink, useOutletContext } from "react-router"
 import heroPhoto from "@/imports/back.png"
@@ -67,11 +68,11 @@ function iconForService(service: Service): LucideIcon {
 }
 
 function masterName(m: Master): string {
-  return m.name || m.full_name || "Без имени"
+  return t(m.name || m.full_name || "Без имени")
 }
 
 function masterRole(m: Master): string {
-  return m.role || m.position || m.specialization || ""
+  return t(m.role || m.position || m.specialization || "")
 }
 
 function masterPhoto(m: Master): string | undefined {
@@ -125,7 +126,7 @@ export function HomePage() {
         <div className="absolute inset-0 z-0">
           <ImageWithFallback
             src={heroPhoto}
-            alt="Роскошный интерьер салона Allure с мягким светом и элегантной мебелью"
+            alt={t("Роскошный интерьер салона Allure с мягким светом и элегантной мебелью")}
             className="w-full h-full object-cover blur-[2px]"
           />
           <div className="absolute inset-0 bg-black/55"></div>
@@ -134,21 +135,20 @@ export function HomePage() {
 
         <div className="relative z-10 max-w-4xl mx-auto px-6 text-center">
           <span className="inline-block px-4 py-1 mb-6 rounded-full border border-gold/70 text-gold font-medium text-sm tracking-widest uppercase">
-            Добро пожаловать в Allure
+            {t("Добро пожаловать в Allure")}
           </span>
           <h1 className="text-5xl md:text-7xl font-serif text-white mb-6 leading-tight drop-shadow-sm">
-            Перезагрузка <br />
-            <span className="text-gold-gradient italic">за один визит.</span>
+            {t("Перезагрузка")} <br />
+            <span className="text-gold-gradient italic">{t("за один визит.")}</span>
           </h1>
           <p className="text-lg md:text-xl text-white/90 max-w-2xl mx-auto mb-10 font-medium">
-            Погрузитесь в мир изысканного ухода — в спокойном современном
-            пространстве, созданном исключительно для вашего благополучия.
+            {t("Погрузитесь в мир изысканного ухода — в спокойном современном пространстве, созданном исключительно для вашего благополучия.")}
           </p>
           <button
             onClick={openBooking}
             className="bg-gradient-to-br from-gold to-gold-hover hover:brightness-105 text-white px-10 py-4 rounded-full text-lg font-semibold hover:shadow-[0_10px_30px_rgba(212,175,55,0.3)] hover:-translate-y-1 transition-all duration-300"
           >
-            Записаться
+            {t("Записаться")}
           </button>
         </div>
       </section>
@@ -162,18 +162,17 @@ export function HomePage() {
           <div className="flex flex-col md:flex-row items-end justify-between mb-16 gap-6">
             <div>
               <h2 className="text-4xl font-serif text-foreground mb-4">
-                Наши услуги
+                {t("Наши услуги")}
               </h2>
               <p className="text-muted-foreground max-w-xl">
-                Тщательно подобранные процедуры, которые подчеркнут вашу
-                естественную красоту и подарят полное расслабление.
+                {t("Тщательно подобранные процедуры, которые подчеркнут вашу естественную красоту и подарят полное расслабление.")}
               </p>
             </div>
             <NavLink
               to="/services"
               className="text-gold font-medium flex items-center gap-2 hover:gap-3 transition-all hover:text-gold-hover"
             >
-              Все услуги <ArrowRight className="size-4" />
+              {t("Все услуги")} <ArrowRight className="size-4" />
             </NavLink>
           </div>
 
@@ -192,7 +191,7 @@ export function HomePage() {
             </div>
           ) : services.length === 0 ? (
             <p className="text-center text-muted-foreground py-8">
-              Услуги скоро появятся.
+              {t("Услуги скоро появятся.")}
             </p>
           ) : (
             <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
@@ -207,7 +206,7 @@ export function HomePage() {
                       <Icon className="size-8 stroke-[1.5]" />
                     </div>
                     <h3 className="text-xl font-serif text-foreground mb-2">
-                      {service.name}
+                      {t(service.name)}
                     </h3>
                     {service.description && (
                       <p className="text-sm text-muted-foreground">
@@ -227,10 +226,10 @@ export function HomePage() {
         <div className="max-w-7xl mx-auto px-6">
           <div className="text-center mb-16">
             <h2 className="text-4xl font-serif text-foreground mb-4">
-              Наши мастера
+              {t("Наши мастера")}
             </h2>
             <p className="text-muted-foreground max-w-xl mx-auto">
-              Команда титулованных профессионалов, готовых воплотить вашу идею.
+              {t("Команда титулованных профессионалов, готовых воплотить вашу идею.")}
             </p>
           </div>
 
@@ -249,7 +248,7 @@ export function HomePage() {
             </div>
           ) : masters.length === 0 ? (
             <p className="text-center text-muted-foreground py-8">
-              Информация о мастерах скоро появится.
+              {t("Информация о мастерах скоро появится.")}
             </p>
           ) : (
             <div className="flex overflow-x-auto pb-10 -mx-6 px-6 gap-8 snap-x hide-scrollbar">
@@ -294,7 +293,7 @@ export function HomePage() {
               to="/masters"
               className="inline-block px-8 py-3 rounded-full border-2 border-gold text-gold font-medium hover:bg-gold hover:text-white transition-colors"
             >
-              Вся команда
+              {t("Вся команда")}
             </NavLink>
           </div>
         </div>

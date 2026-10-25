@@ -1,3 +1,4 @@
+import { t } from "@/lib/i18n"
 import { useEffect, useState } from "react"
 import { X } from "lucide-react"
 import type { PublicReview } from "@/api/api"
@@ -17,12 +18,12 @@ export function PhotoLightbox({ src, onClose }: { src: string; onClose: () => vo
     <div
       role="dialog"
       aria-modal="true"
-      aria-label="Фото к отзыву"
+      aria-label={t("Фото к отзыву")}
       onClick={onClose}
       className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/80 cursor-zoom-out"
     >
-      <img src={src} alt="Фото к отзыву" className="max-w-full max-h-[90vh] rounded-2xl shadow-2xl" />
-      <button onClick={onClose} autoFocus aria-label="Закрыть" className="absolute top-4 right-4 p-2 rounded-full bg-white/10 text-white hover:bg-white/20">
+      <img src={src} alt={t("Фото к отзыву")} className="max-w-full max-h-[90vh] rounded-2xl shadow-2xl" />
+      <button onClick={onClose} autoFocus aria-label={t("Закрыть")} className="absolute top-4 right-4 p-2 rounded-full bg-white/10 text-white hover:bg-white/20">
         <X className="size-6" />
       </button>
     </div>
@@ -39,7 +40,7 @@ export function ReviewCard({ review: r, compact = false }: { review: PublicRevie
         <div className="flex-1 min-w-0">
           <p className="font-medium text-foreground">{r.author}</p>
           <p className="text-xs text-muted-foreground">
-            {formatDate(r.created_at.slice(0, 10))} · {r.service_name} · мастер {r.employee_name}
+            {formatDate(r.created_at.slice(0, 10))} · {t(r.service_name)} · {t("мастер")} {t(r.employee_name)}
           </p>
         </div>
         <StarRating value={r.rating} />
@@ -51,7 +52,7 @@ export function ReviewCard({ review: r, compact = false }: { review: PublicRevie
             <button
               key={p.id}
               onClick={() => setOpened(p.url)}
-              aria-label="Открыть фото"
+              aria-label={t("Открыть фото")}
               className={`${compact ? "size-14" : "size-20"} rounded-xl overflow-hidden border border-rose-100 hover:border-gold transition-colors cursor-zoom-in`}
             >
               <img src={p.url} alt="" loading="lazy" className="size-full object-cover" />
@@ -61,7 +62,7 @@ export function ReviewCard({ review: r, compact = false }: { review: PublicRevie
       )}
       {r.reply && !compact && (
         <div className="mt-4 ml-2 pl-4 border-l-2 border-gold/50">
-          <p className="text-xs font-medium text-gold-dark mb-1">Ответ салона</p>
+          <p className="text-xs font-medium text-gold-dark mb-1">{t("Ответ салона")}</p>
           <p className="text-sm text-muted-foreground whitespace-pre-line">{r.reply}</p>
         </div>
       )}

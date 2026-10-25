@@ -1,3 +1,4 @@
+import { t } from "@/lib/i18n"
 import { useState } from "react"
 import { useOutletContext } from "react-router"
 import heroPhoto from "@/imports/image-1.png"
@@ -22,8 +23,8 @@ export function ServicesPage() {
   const services = (data ?? []).map((s) => ({
     id: s.id,
     category: s.category,
-    name: s.name,
-    desc: s.description,
+    name: t(s.name),
+    desc: t(s.description),
     time: formatDuration(s.duration_minutes),
     price: s.price,
     priceToday: s.price_today,
@@ -41,12 +42,11 @@ export function ServicesPage() {
       {/* Header */}
       <div className="bg-rose-50 border-b border-rose-100 py-16 px-6 text-center">
         <h1 className="text-4xl md:text-5xl font-serif text-foreground mb-4">
-          Наши услуги
+          {t("Наши услуги")}
         </h1>
 
         <p className="text-muted-foreground max-w-2xl mx-auto">
-          Загляните в меню роскошных процедур, созданных, чтобы поднять вашу
-          красоту и заботу о себе на новый уровень.
+          {t("Загляните в меню роскошных процедур, созданных, чтобы поднять вашу красоту и заботу о себе на новый уровень.")}
         </p>
 
         <a
@@ -55,7 +55,7 @@ export function ServicesPage() {
           className="inline-flex items-center gap-2 mt-6 border-2 border-gold text-gold hover:bg-gold hover:text-white px-6 py-2.5 rounded-full text-sm font-medium transition-colors"
         >
           <Download className="size-4" />
-          Скачать прайс-лист
+          {t("Скачать прайс-лист")}
         </a>
       </div>
 
@@ -72,20 +72,20 @@ export function ServicesPage() {
                   : "bg-white text-muted-foreground border-rose-200 hover:border-gold/50 hover:text-gold"
               }`}
             >
-              {cat}
+              {t(cat)}
             </button>
           ))}
         </div>
 
         {loading && (
-          <p className="text-center text-muted-foreground">Загрузка…</p>
+          <p className="text-center text-muted-foreground">{t("Загрузка…")}</p>
         )}
 
         {error && <ErrorMessage error={error} onRetry={reload} />}
 
         {!loading && !error && filteredServices.length === 0 && (
           <p className="text-center text-muted-foreground">
-            В этой категории пока нет услуг.
+            {t("В этой категории пока нет услуг.")}
           </p>
         )}
 
@@ -136,7 +136,7 @@ export function ServicesPage() {
                     onClick={openBooking}
                     className="bg-white border-2 border-gold text-gold hover:bg-gold hover:text-white px-6 py-2 rounded-full text-sm font-medium transition-colors"
                   >
-                    Выбрать
+                    {t("Выбрать")}
                   </button>
                 </div>
 

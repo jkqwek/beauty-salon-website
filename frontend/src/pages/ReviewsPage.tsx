@@ -1,3 +1,4 @@
+import { t } from "@/lib/i18n"
 import { useSearchParams } from "react-router"
 import { catalogApi, reviewsApi } from "@/api/api"
 import { useApi } from "@/api/useApi"
@@ -21,7 +22,7 @@ export function ReviewsPage() {
   return (
     <div className="flex-1 bg-pearl pb-24">
       <div className="bg-rose-50 border-b border-rose-100 py-16 px-6 text-center">
-        <h1 className="text-4xl md:text-5xl font-serif text-foreground mb-4">Отзывы</h1>
+        <h1 className="text-4xl md:text-5xl font-serif text-foreground mb-4">{t("Отзывы")}</h1>
         {reviews.data && reviews.data.count > 0 && (
           <div className="flex items-center justify-center gap-3 text-muted-foreground">
             <span className="text-3xl font-serif text-foreground">
@@ -37,7 +38,7 @@ export function ReviewsPage() {
         {withReviews.length > 0 && (
           <div className="flex flex-wrap gap-2 mb-8">
             <button onClick={() => setParams({})} aria-pressed={master === null} className={chipCls(master === null)}>
-              Все мастера
+              {t("Все мастера")}
             </button>
             {withReviews.map((m) => (
               <button
@@ -52,11 +53,11 @@ export function ReviewsPage() {
           </div>
         )}
 
-        {reviews.loading && !reviews.data && <p className="text-muted-foreground">Загрузка…</p>}
+        {reviews.loading && !reviews.data && <p className="text-muted-foreground">{t("Загрузка…")}</p>}
         {reviews.error && <ErrorMessage error={reviews.error} onRetry={reviews.reload} />}
         {reviews.data?.count === 0 && (
           <p className="text-muted-foreground text-center">
-            Отзывов пока нет. Поделиться впечатлениями можно в личном кабинете после визита.
+            {t("Отзывов пока нет. Поделиться впечатлениями можно в личном кабинете после визита.")}
           </p>
         )}
         <div className="space-y-6">

@@ -1,3 +1,4 @@
+import { t } from "@/lib/i18n"
 import entrance from "@/imports/entrance.png"
 import { ImageWithFallback } from "./ImageWithFallback"
 import { MapPin, Clock } from "lucide-react"
@@ -6,15 +7,15 @@ export function LocationSection() {
   return (
     <section className="max-w-7xl mx-auto px-6 py-16 w-full">
       <h2 className="text-3xl md:text-4xl font-serif text-foreground mb-8 text-center">
-        Как добраться
+        {t("Как добраться")}
       </h2>
 
       <div className="flex flex-col gap-2 items-center text-muted-foreground mb-10">
         <p className="flex items-center gap-2">
-          <MapPin className="size-4 text-gold" /> б-р Строителей, 28/1, Кемерово, Кемеровская обл., 650003
+          <MapPin className="size-4 text-gold" /> {t("б-р Строителей, 28/1, Кемерово, Кемеровская обл., 650003")}
         </p>
         <p className="flex items-center gap-2">
-          <Clock className="size-4 text-gold" /> Ежедневно с 9:00 до 20:30
+          <Clock className="size-4 text-gold" /> {t("Ежедневно с 9:00 до 20:30")}
         </p>
       </div>
 
@@ -26,14 +27,14 @@ export function LocationSection() {
             loading="lazy"
             allowFullScreen
             referrerPolicy="no-referrer-when-downgrade"
-            title="Карта проезда к салону Allure"
+            title={t("Карта проезда к салону Allure")}
           />
         </div>
 
         <div className="rounded-3xl overflow-hidden border border-rose-100 h-80">
           <ImageWithFallback
             src={entrance}
-            alt="Вход в салон Allure"
+            alt={t("Вход в салон Allure")}
             className="w-full h-full object-cover"
           />
         </div>

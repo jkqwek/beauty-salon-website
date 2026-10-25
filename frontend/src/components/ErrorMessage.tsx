@@ -1,3 +1,4 @@
+import { t } from "@/lib/i18n"
 import { AlertCircle } from "lucide-react"
 import { errorText, type ApiError } from "@/api/client"
 
@@ -22,7 +23,7 @@ export function ErrorMessage({ error, onRetry }: Props) {
             onClick={onRetry}
             className="mt-2 font-medium underline underline-offset-2 hover:text-rose-900"
           >
-            Повторить
+            {t("Повторить")}
           </button>
         )}
       </div>

@@ -1,10 +1,11 @@
+import { LanguageProvider, t, useLang } from "./lib/i18n"
 import {
   RouterProvider,
   createBrowserRouter,
   Outlet,
   NavLink,
 } from "react-router"
-import { Sparkles, Calendar, Menu, X, LogOut } from "lucide-react"
+import { Sparkles, Calendar, Menu, X, LogOut, Globe } from "lucide-react"
 import { useState } from "react"
 import { HomePage } from "./pages/HomePage"
 import { MastersPage } from "./pages/MastersPage"
@@ -33,7 +34,7 @@ function Layout() {
   const next = user?.next_booking
   const soon =
     next && hoursUntil(next.date, next.start_time) <= 24
-      ? `Запись ${relativeDay(next.date)} в ${formatTime(next.start_time)}`
+      ? t("Запись {day} в {time}", { day: relativeDay(next.date), time: formatTime(next.start_time) })
       : null
   const dot = (
     <span className="absolute top-0 right-0 size-3 rounded-full bg-gold ring-2 ring-pearl" aria-hidden="true" />
@@ -85,7 +86,7 @@ function Layout() {
                 }`
               }
             >
-              Главная
+              {t("Главная")}
             </NavLink>
             <NavLink
               to="/services"
@@ -95,7 +96,7 @@ function Layout() {
                 }`
               }
             >
-              Услуги
+              {t("Услуги")}
             </NavLink>
             <NavLink
               to="/masters"
@@ -105,7 +106,7 @@ function Layout() {
                 }`
               }
             >
-              Мастера
+              {t("Мастера")}
             </NavLink>
             <NavLink
               to="/reviews"
@@ -115,7 +116,7 @@ function Layout() {
                 }`
               }
             >
-              Отзывы
+              {t("Отзывы")}
             </NavLink>
             {user?.is_staff && (
               <NavLink
@@ -126,19 +127,20 @@ function Layout() {
                   }`
                 }
               >
-                Панель
+                {t("Панель")}
               </NavLink>
             )}
           </nav>
 
           {/* Действия — прижаты вправо */}
           <div className="hidden lg:flex items-center gap-3 xl:gap-4 justify-self-end">
+            <LangSwitch />
             {user ? (
               <>
                 <NavLink
                   to="/profile"
-                  title={soon ?? "Личный кабинет"}
-                  aria-label={soon ? `Личный кабинет. ${soon}` : "Личный кабинет"}
+                  title={soon ?? t("Личный кабинет")}
+                  aria-label={soon ? `${t("Личный кабинет")}. ${soon}` : t("Личный кабинет")}
                   className="relative rounded-full hover:ring-2 hover:ring-gold/40 transition-shadow"
                 >
                   <Avatar
@@ -150,7 +152,7 @@ function Layout() {
                 </NavLink>
                 <button
                   onClick={() => setLogoutOpen(true)}
-                  title="Выйти"
+                  title={t("Выйти")}
                   className="p-2 text-muted-foreground hover:text-gold transition-colors"
                 >
                   <LogOut className="size-5" />
@@ -161,14 +163,14 @@ function Layout() {
                 onClick={() => setAuthOpen(true)}
                 className="text-sm font-medium text-muted-foreground hover:text-gold transition-colors whitespace-nowrap"
               >
-                Войти
+                {t("Войти")}
               </button>
             )}
             <button
               onClick={openBooking}
               className="bg-gold hover:bg-gold-hover text-white px-6 py-2.5 rounded-full text-sm font-medium transition-all shadow-sm hover:shadow-md whitespace-nowrap"
             >
-              Записаться
+              {t("Записаться")}
             </button>
           </div>
 
@@ -176,7 +178,7 @@ function Layout() {
           <button
             className="lg:hidden p-2 text-muted-foreground justify-self-end col-start-3"
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            aria-label="Меню"
+            aria-label={t("Меню")}
           >
             {mobileMenuOpen ? (
               <X className="size-6" />
@@ -194,35 +196,35 @@ function Layout() {
               onClick={() => setMobileMenuOpen(false)}
               className="text-lg font-medium text-foreground"
             >
-              Главная
+              {t("Главная")}
             </NavLink>
             <NavLink
               to="/services"
               onClick={() => setMobileMenuOpen(false)}
               className="text-lg font-medium text-foreground"
             >
-              Услуги
+              {t("Услуги")}
             </NavLink>
             <NavLink
               to="/masters"
               onClick={() => setMobileMenuOpen(false)}
               className="text-lg font-medium text-foreground"
             >
-              Мастера
+              {t("Мастера")}
             </NavLink>
             <NavLink
               to="/reviews"
               onClick={() => setMobileMenuOpen(false)}
               className="text-lg font-medium text-foreground"
             >
-              Отзывы
+              {t("Отзывы")}
             </NavLink>
             <NavLink
               to="/profile"
               onClick={() => setMobileMenuOpen(false)}
               className="text-lg font-medium text-foreground flex items-center gap-2"
             >
-              Профиль
+              {t("Профиль")}
               {soon && (
                 <span className="flex items-center gap-1.5 text-sm font-normal text-gold-dark">
                   <span className="size-2.5 rounded-full bg-gold" aria-hidden="true" />
@@ -236,9 +238,10 @@ function Layout() {
                 onClick={() => setMobileMenuOpen(false)}
                 className="text-lg font-medium text-foreground"
               >
-                Панель
+                {t("Панель")}
               </NavLink>
             )}
+            <LangSwitch className="text-lg text-foreground" />
             {user ? (
               <button
                 onClick={() => {
@@ -247,7 +250,7 @@ function Layout() {
                 }}
                 className="text-lg font-medium text-foreground text-left"
               >
-                Выйти
+                {t("Выйти")}
               </button>
             ) : (
               <button
@@ -257,7 +260,7 @@ function Layout() {
                 }}
                 className="text-lg font-medium text-foreground text-left"
               >
-                Войти
+                {t("Войти")}
               </button>
             )}
             <button
@@ -267,7 +270,7 @@ function Layout() {
               }}
               className="bg-gold text-white px-6 py-3 rounded-full text-center font-medium mt-4"
             >
-              Записаться
+              {t("Записаться")}
             </button>
           </div>
         )}
@@ -285,11 +288,11 @@ function Layout() {
             Allure
           </div>
           <p className="text-muted-foreground text-sm text-center md:text-left">
-            © 2026 Allure Beauty Salon. Все права защищены.
+            {t("© 2026 Allure Beauty Salon. Все права защищены.")}
           </p>
           <div className="flex gap-4">
             <span className="text-sm text-muted-foreground hover:text-gold cursor-pointer transition-colors">
-              ВКонтакте
+              {t("ВКонтакте")}
             </span>
             <span className="text-sm text-muted-foreground hover:text-gold cursor-pointer transition-colors">
               Telegram
@@ -366,8 +369,25 @@ const router = createBrowserRouter([
 export default function App() {
   return (
     <AuthProvider>
-      <RouterProvider router={router} />
+      <LanguageProvider>
+        <RouterProvider router={router} />
+      </LanguageProvider>
     </AuthProvider>
+  )
+}
+
+/** Переключатель языка RU / EN */
+function LangSwitch({ className = "text-sm" }: { className?: string }) {
+  const { lang, setLang } = useLang()
+  return (
+    <button
+      onClick={() => setLang(lang === "ru" ? "en" : "ru")}
+      title={t("Сменить язык")}
+      aria-label={t("Сменить язык")}
+      className={`inline-flex items-center gap-1.5 font-medium hover:text-gold transition-colors ${className} ${className.includes("text-foreground") ? "" : "text-muted-foreground"}`}
+    >
+      <Globe className="size-4" /> {lang === "ru" ? "EN" : "RU"}
+    </button>
   )
 }
 
@@ -381,15 +401,15 @@ function BlockedNotice({ onClose }: { onClose: () => void }) {
         className="bg-white w-full max-w-sm rounded-[2rem] shadow-2xl p-8 text-center space-y-4"
       >
         <h2 id="blocked-title" className="text-2xl font-serif text-foreground">
-          Запись недоступна
+          {t("Запись недоступна")}
         </h2>
-        <p className="text-muted-foreground">Онлайн-запись недоступна. Свяжитесь с салоном.</p>
+        <p className="text-muted-foreground">{t("Онлайн-запись недоступна. Свяжитесь с салоном.")}</p>
         <button
           onClick={onClose}
           autoFocus
           className="bg-gold hover:bg-gold-hover text-white px-8 py-3 rounded-full font-medium transition-colors"
         >
-          Понятно
+          {t("Понятно")}
         </button>
       </div>
     </div>
@@ -406,22 +426,22 @@ function LogoutConfirm({ onConfirm, onClose }: { onConfirm: () => void; onClose:
         className="bg-white w-full max-w-sm rounded-[2rem] shadow-2xl p-8 text-center space-y-4"
       >
         <h2 id="logout-title" className="text-2xl font-serif text-foreground">
-          Выйти из аккаунта?
+          {t("Выйти из аккаунта?")}
         </h2>
-        <p className="text-muted-foreground">Чтобы записаться или посмотреть свои записи, нужно будет войти снова.</p>
+        <p className="text-muted-foreground">{t("Чтобы записаться или посмотреть свои записи, нужно будет войти снова.")}</p>
         <div className="flex gap-3 justify-center pt-2">
           <button
             onClick={onClose}
             autoFocus
             className="px-6 py-3 rounded-full border border-rose-200 text-foreground font-medium hover:bg-rose-50 transition-colors"
           >
-            Отмена
+            {t("Отмена")}
           </button>
           <button
             onClick={onConfirm}
             className="bg-gold hover:bg-gold-hover text-white px-8 py-3 rounded-full font-medium transition-colors"
           >
-            Выйти
+            {t("Выйти")}
           </button>
         </div>
       </div>

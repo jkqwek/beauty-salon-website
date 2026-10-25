@@ -1,3 +1,4 @@
+import { t } from "@/lib/i18n"
 import { useEffect, useState } from "react"
 import { X, CheckCircle2 } from "lucide-react"
 import { bookingApi, catalogApi, type Booking, type Employee, type Service } from "@/api/api"
@@ -143,7 +144,7 @@ export function BookingWizard({ onClose, prefill }: BookingWizardProps) {
         {/* Header */}
         <div className="bg-white p-6 border-b border-rose-100 flex items-center justify-between shrink-0">
           <div className="flex flex-col">
-            <h2 className="text-2xl font-serif text-foreground">Запись</h2>
+            <h2 className="text-2xl font-serif text-foreground">{t("Запись")}</h2>
             <div className="flex items-center gap-2 mt-2">
               {[1, 2, 3, 4].map((s) => (
                 <div key={s} className="flex items-center gap-2">
@@ -171,7 +172,7 @@ export function BookingWizard({ onClose, prefill }: BookingWizardProps) {
           </div>
           <button
             onClick={onClose}
-            aria-label="Закрыть"
+            aria-label={t("Закрыть")}
             className="p-2 text-muted-foreground hover:text-foreground transition-colors bg-rose-50 rounded-full"
           >
             <X className="size-5" />
@@ -187,12 +188,12 @@ export function BookingWizard({ onClose, prefill }: BookingWizardProps) {
                   <CheckCircle2 className="size-8" />
                 </div>
               </div>
-              <h3 className="text-3xl font-serif text-foreground">Вы записаны!</h3>
+              <h3 className="text-3xl font-serif text-foreground">{t("Вы записаны!")}</h3>
               <p className="text-sm text-yellow-800 bg-yellow-50 border border-yellow-200 rounded-full px-4 py-1">
-                Запись ждёт подтверждения салоном — статус виден в личном кабинете
+                {t("Запись ждёт подтверждения салоном — статус виден в личном кабинете")}
               </p>
               <p className="text-muted-foreground">
-                {created.service_name} • {created.employee_name}
+                {t(created.service_name)} • {t(created.employee_name)}
                 <br />
                 {formatDate(created.date)}, {created.start_time.slice(0, 5)}
               </p>
@@ -207,8 +208,8 @@ export function BookingWizard({ onClose, prefill }: BookingWizardProps) {
 
               {step === 1 && (
                 <div className="space-y-4">
-                  <h3 className="text-xl font-serif text-foreground mb-6">Выберите услугу</h3>
-                  {services.loading && <p className="text-muted-foreground">Загрузка…</p>}
+                  <h3 className="text-xl font-serif text-foreground mb-6">{t("Выберите услугу")}</h3>
+                  {services.loading && <p className="text-muted-foreground">{t("Загрузка…")}</p>}
                   {services.error && (
                     <ErrorMessage error={services.error} onRetry={services.reload} />
                   )}
@@ -224,7 +225,7 @@ export function BookingWizard({ onClose, prefill }: BookingWizardProps) {
                     >
                       <div className="flex items-center justify-between">
                         <div>
-                          <h4 className="font-medium text-foreground text-lg">{svc.name}</h4>
+                          <h4 className="font-medium text-foreground text-lg">{t(svc.name)}</h4>
                           <p className="text-sm text-muted-foreground flex flex-wrap items-baseline gap-x-1">
                             {formatDuration(svc.duration_minutes)} •{" "}
                             <PriceTag base={svc.price} price={svc.price_today} discount={svc.discount_percent} />
@@ -247,14 +248,14 @@ export function BookingWizard({ onClose, prefill }: BookingWizardProps) {
 
               {step === 2 && (
                 <div className="space-y-6">
-                  <h3 className="text-xl font-serif text-foreground mb-2">Выберите мастера</h3>
-                  {employees.loading && <p className="text-muted-foreground">Загрузка…</p>}
+                  <h3 className="text-xl font-serif text-foreground mb-2">{t("Выберите мастера")}</h3>
+                  {employees.loading && <p className="text-muted-foreground">{t("Загрузка…")}</p>}
                   {employees.error && (
                     <ErrorMessage error={employees.error} onRetry={employees.reload} />
                   )}
                   {employees.data?.length === 0 && (
                     <p className="text-muted-foreground">
-                      Для этой услуги пока нет мастеров. Выберите другую услугу.
+                      {t("Для этой услуги пока нет мастеров. Выберите другую услугу.")}
                     </p>
                   )}
                   {!!employees.data?.length && (
@@ -279,14 +280,14 @@ export function BookingWizard({ onClose, prefill }: BookingWizardProps) {
                             >
                               <div className="size-full rounded-full bg-rose-100 overflow-hidden flex items-center justify-center text-rose-400">
                                 {isAny ? (
-                                  <span className="font-serif text-sm">Любой</span>
+                                  <span className="font-serif text-sm">{t("Любой")}</span>
                                 ) : (
                                   <Avatar src={masterPhoto(m)} name={m.full_name} className="size-full text-base" />
                                 )}
                               </div>
                             </div>
                             <span className="font-medium text-sm text-foreground">
-                              {isAny ? "Любой" : m.full_name}
+                              {isAny ? t("Любой") : t(m.full_name)}
                             </span>
                           </div>
                         )
@@ -298,7 +299,7 @@ export function BookingWizard({ onClose, prefill }: BookingWizardProps) {
 
               {step === 3 && (
                 <div className="space-y-8">
-                  <h3 className="text-xl font-serif text-foreground">Выберите дату и время</h3>
+                  <h3 className="text-xl font-serif text-foreground">{t("Выберите дату и время")}</h3>
 
                   {service && master && (
                     <BookingCalendar
@@ -313,13 +314,13 @@ export function BookingWizard({ onClose, prefill }: BookingWizardProps) {
                   )}
 
                   <div>
-                    <h4 className="font-medium text-foreground mb-4">Свободное время</h4>
+                    <h4 className="font-medium text-foreground mb-4">{t("Свободное время")}</h4>
                     {!date && (
                       <p className="text-sm text-muted-foreground">
-                        Выберите дату, чтобы увидеть свободное время.
+                        {t("Выберите дату, чтобы увидеть свободное время.")}
                       </p>
                     )}
-                    {date && slotsLoading && <p className="text-muted-foreground">Загрузка…</p>}
+                    {date && slotsLoading && <p className="text-muted-foreground">{t("Загрузка…")}</p>}
                     {date && slotsError && (
                       <ErrorMessage
                         error={slotsError}
@@ -328,7 +329,7 @@ export function BookingWizard({ onClose, prefill }: BookingWizardProps) {
                     )}
                     {date && !slotsLoading && !slotsError && times.length === 0 && (
                       <p className="text-sm text-muted-foreground">
-                        На эту дату свободного времени нет — выберите другой день.
+                        {t("На эту дату свободного времени нет — выберите другой день.")}
                       </p>
                     )}
                     {date && !slotsLoading && (
@@ -352,31 +353,31 @@ export function BookingWizard({ onClose, prefill }: BookingWizardProps) {
                       <CheckCircle2 className="size-8" />
                     </div>
                   </div>
-                  <h3 className="text-3xl font-serif text-foreground">Подтвердите запись</h3>
+                  <h3 className="text-3xl font-serif text-foreground">{t("Подтвердите запись")}</h3>
 
                   <div className="w-full bg-white rounded-2xl border border-rose-100 p-6 text-left space-y-4 mt-4">
                     <div className="flex justify-between items-center pb-4 border-b border-rose-50">
-                      <span className="text-muted-foreground">Услуга</span>
-                      <span className="font-medium text-foreground">{service?.name}</span>
+                      <span className="text-muted-foreground">{t("Услуга")}</span>
+                      <span className="font-medium text-foreground">{service && t(service.name)}</span>
                     </div>
                     <div className="flex justify-between items-center pb-4 border-b border-rose-50">
-                      <span className="text-muted-foreground">Мастер</span>
-                      <span className="font-medium text-foreground">{chosenEmployee?.full_name}</span>
+                      <span className="text-muted-foreground">{t("Мастер")}</span>
+                      <span className="font-medium text-foreground">{chosenEmployee && t(chosenEmployee.full_name)}</span>
                     </div>
                     <div className="flex justify-between items-center pb-4 border-b border-rose-50">
-                      <span className="text-muted-foreground">Дата и время</span>
+                      <span className="text-muted-foreground">{t("Дата и время")}</span>
                       <span className="font-medium text-foreground">
                         {date && formatDate(date)}, {time}
                       </span>
                     </div>
                     <div className="flex justify-between items-center gap-4">
-                      <span className="text-muted-foreground">Цена</span>
+                      <span className="text-muted-foreground">{t("Цена")}</span>
                       <span className="font-medium text-foreground text-right">
                         {quote.data ? (
                           <>
                             <PriceTag base={quote.data.base_price} price={quote.data.price} discount={quote.data.discount_percent} />
                             {quote.data.promotion && (
-                              <span className="block text-xs text-muted-foreground font-normal">Акция «{quote.data.promotion}»</span>
+                              <span className="block text-xs text-muted-foreground font-normal">{t("Акция")} «{quote.data.promotion}»</span>
                             )}
                           </>
                         ) : (
@@ -400,7 +401,7 @@ export function BookingWizard({ onClose, prefill }: BookingWizardProps) {
                 onClick={onClose}
                 className="bg-gold hover:bg-gold-hover text-white px-8 py-3 rounded-full font-medium transition-colors shadow-sm"
               >
-                Готово
+                {t("Готово")}
               </button>
             </>
           ) : (
@@ -412,7 +413,7 @@ export function BookingWizard({ onClose, prefill }: BookingWizardProps) {
                 }}
                 className="text-muted-foreground font-medium hover:text-foreground transition-colors px-4 py-2"
               >
-                {step > 1 ? "Назад" : "Отмена"}
+                {step > 1 ? t("Назад") : t("Отмена")}
               </button>
 
               {step < 4 ? (
@@ -428,7 +429,7 @@ export function BookingWizard({ onClose, prefill }: BookingWizardProps) {
                   }
                   className="bg-gold hover:bg-gold-hover text-white px-8 py-3 rounded-full font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
                 >
-                  Продолжить
+                  {t("Продолжить")}
                 </button>
               ) : (
                 <button
@@ -437,7 +438,7 @@ export function BookingWizard({ onClose, prefill }: BookingWizardProps) {
                   className="bg-gold hover:bg-gold-hover text-white px-8 py-3 rounded-full font-medium transition-colors shadow-md flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <CheckCircle2 className="size-5" />
-                  {submitting ? "Отправка…" : "Подтвердить запись"}
+                  {submitting ? t("Отправка…") : t("Подтвердить запись")}
                 </button>
               )}
             </>

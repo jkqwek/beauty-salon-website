@@ -1,8 +1,12 @@
+import re
+
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.core.validators import validate_email
 from django.utils import timezone
 from rest_framework import serializers
 
 from config.images import RelativeImageField
-from .models import Employee, Promotion, Service, price_on
+from .models import Employee, Promotion, Service, price_on, ServiceSuggestion
 
 
 class ServiceSerializer(serializers.ModelSerializer):
@@ -73,3 +77,27 @@ class PromotionSerializer(serializers.ModelSerializer):
         if date_from and date_to and date_to < date_from:
             raise serializers.ValidationError({"date_to": "Дата «по» не может быть раньше даты «с»."})
         return attrs
+
+class ServiceSuggestionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ServiceSuggestion
+        fields = ("title", "description", "name", "contact")
+        extra_kwargs = {
+            "title": {"min_length": 3},
+            "description": {"max_length": 1000},
+        }
+
+    def validate_contact(self, value):
+        """Контакт: либо email, либо телефон (10–15 цифр)."""
+        value = value.strip()
+        try:
+            validate_email(value)
+            return value.lower()
+        except DjangoValidationError:
+            pass
+        digits = re.sub(r"\D", "", value)
+        if not re.fullmatch(r"\+?[\d\s()\-]+", value) or not 10 <= len(digits) <= 15:
+            raise serializers.ValidationError(
+                "Укажите телефон или email, по которому с вами можно связаться."
+            )
+        return value

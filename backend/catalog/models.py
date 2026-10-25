@@ -101,3 +101,19 @@ def price_on(service, day):
     price = (service.price * (100 - promo.discount_percent) / 100).quantize(Decimal("1"), ROUND_HALF_UP)
     price = price.quantize(Decimal("0.01"))
     return price, promo
+
+class ServiceSuggestion(models.Model):
+    title = models.CharField("Название услуги", max_length=100)
+    description = models.TextField("Описание", blank=True)
+    name = models.CharField("Имя", blank=True, max_length=100)
+    contact = models.CharField("Контакт(телефон или email)", max_length=100)
+    created_at = models.DateTimeField("Получено", auto_now_add=True)
+    is_processed = models.BooleanField("Обработано", default=False)
+
+    class Meta:
+        verbose_name = "Предложение услуги"
+        verbose_name_plural = "Предложения услуг"
+        ordering = ["is_processed", "-created_at"]
+
+    def __str__(self):
+        return f"{self.title} ({self.contact})"

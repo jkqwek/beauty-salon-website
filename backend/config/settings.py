@@ -149,6 +149,9 @@ REST_FRAMEWORK = {
         "register": "10/hour",
         "password_reset": "5/hour",
         "password_reset_confirm": "10/hour",
+        "suggestion": "5/hour",
+        "guest_booking": "5/hour",
+        "public_slots": "120/min",
     },
 
     "EXCEPTION_HANDLER": "config.exceptions.custom_exception_handler",

@@ -18,6 +18,8 @@ import { PanelLayout, panelRoutes } from "./pages/PanelPage"
 import { ReviewsPage } from "./pages/ReviewsPage"
 import { BackToTopButton } from "./components/BackToTopButton"
 import { Avatar } from "./components/Avatar"
+import { VacanciesPage } from "./pages/VacanciesPage"
+import { PartnersPage } from "./pages/PartnersPage"
 
 function Layout() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
@@ -27,13 +29,7 @@ function Layout() {
   const [resumeBooking, setResumeBooking] = useState(false)
 
   // Запись только для вошедших: гостю сначала показываем вход
-  const openBooking = () => {
-    if (user) setBookingOpen(true)
-    else {
-      setResumeBooking(true)
-      setAuthOpen(true)
-    }
-  }
+  const openBooking = () => setBookingOpen(true)
 
   return (
     <div className="min-h-screen flex flex-col relative overflow-x-clip bg-pearl text-foreground selection:bg-gold/20 selection:text-gold">
@@ -255,6 +251,12 @@ function Layout() {
             © 2026 Allure Beauty Salon. Все права защищены.
           </p>
           <div className="flex gap-4">
+            <NavLink to="/vacancies" className="text-sm text-muted-foreground hover:text-gold transition-colors">
+              Вакансии
+            </NavLink>
+            <NavLink to="/partners" className="text-sm text-muted-foreground hover:text-gold transition-colors">
+              Партнёрам
+            </NavLink>
             <span className="text-sm text-muted-foreground hover:text-gold cursor-pointer transition-colors">
               ВКонтакте
             </span>
@@ -277,12 +279,16 @@ function Layout() {
       <BackToTopButton />
 
       {/* Booking Modal */}
-      {bookingOpen &&
-        (user?.is_blocked ? (
-          <BlockedNotice onClose={() => setBookingOpen(false)} />
-        ) : (
-          <BookingWizard onClose={() => setBookingOpen(false)} />
-        ))}
+      {bookingOpen && (
+        <BookingWizard
+          onClose={() => setBookingOpen(false)}
+          onLogin={() => {
+            setBookingOpen(false)
+            setResumeBooking(true)
+            setAuthOpen(true)
+          }}
+        />
+      )}
 
       {/* Auth Modal */}
       {authOpen && (
@@ -316,6 +322,8 @@ const router = createBrowserRouter([
       { path: "reviews", Component: ReviewsPage },
       { path: "profile", Component: ProfilePage },
       { path: "panel", Component: PanelLayout, children: panelRoutes },
+      { path: "vacancies", Component: VacanciesPage },
+      { path: "partners", Component: PartnersPage },
     ],
   },
 ])

@@ -80,6 +80,13 @@ export interface PriceQuote {
   promotion: string | null
 }
 
+export interface ServiceSuggestionInput {
+  title: string
+  description: string
+  name: string
+  contact: string
+}
+
 const query = (params: Record<string, string | number | null | undefined>) =>
   new URLSearchParams(
     Object.entries(params).filter(([, v]) => v != null && v !== "").map(([k, v]) => [k, String(v)]),
@@ -90,6 +97,17 @@ export interface RegisterData {
   email: string
   password: string
   password2: string
+}
+
+export interface GuestBookingResult {
+  id: number
+  date: string
+  start_time: string
+  end_time: string
+  service_name: string
+  employee_name: string
+  price: string | null
+  status: string
 }
 
 export const authApi = {
@@ -115,7 +133,12 @@ export const catalogApi = {
   services: () => api<Service[]>("/services/"),
   employees: (serviceId?: number) =>
     api<Employee[]>(serviceId ? `/employees/?service=${serviceId}` : "/employees/"),
-
+  suggestService: (data: ServiceSuggestionInput) =>
+  api<ServiceSuggestionInput>("/service-suggestions/", {
+    method: "POST",
+    body: data,
+    auth: false,
+  }),
   // --- Услуги: фото ---
   uploadServiceImage: (id: number, blob: Blob) =>
     api<Service>(`/services/${id}/image/`, { method: "PUT", body: fileForm("image", blob, "service.jpg") }),
@@ -147,6 +170,8 @@ export const bookingApi = {
   upcomingClosures: () => api<Closure[]>("/bookings/closures/upcoming/"),
   create: (data: { employee: number; service: number; date: string; start_time: string }) =>
     api<Booking>("/bookings/", { method: "POST", body: data }),
+  createGuest: (data: { employee: number; service: number; date: string; start_time: string; guest_name: string; guest_phone: string }) =>
+    api<GuestBookingResult>("/bookings/guest/", { method: "POST", body: data, auth: false }),
   my: () => api<Booking[]>("/bookings/my/"),
   cancel: (id: number) => api<Booking>(`/bookings/${id}/cancel/`, { method: "POST" }),
   cancellationPolicy: () => api<CancellationPolicy>("/bookings/cancellation-policy/"),

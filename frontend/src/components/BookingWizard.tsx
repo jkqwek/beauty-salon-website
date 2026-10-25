@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react"
 import { X, CheckCircle2 } from "lucide-react"
-import { bookingApi, catalogApi, type Booking, type Employee, type Service } from "@/api/api"
 import { toApiError, type ApiError } from "@/api/client"
 import { useApi } from "@/api/useApi"
 import { formatDate, formatDuration } from "@/lib/format"
@@ -9,12 +8,22 @@ import { Avatar } from "./Avatar"
 import { BookingCalendar, SlotPicker } from "./BookingCalendar"
 import { ErrorMessage } from "./ErrorMessage"
 import { PriceTag } from "./PriceTag"
+import { bookingApi, catalogApi, type Employee, type GuestBookingResult, type Service } from "@/api/api"
+import { useAuth } from "@/auth/AuthContext"
 
 interface BookingWizardProps {
   onClose: () => void
+  onLogin?: () => void
 }
 
-export function BookingWizard({ onClose }: BookingWizardProps) {
+type CreatedBooking = Pick<GuestBookingResult, "service_name" | "employee_name" | "date" | "start_time">
+const guestInputClass =
+  "w-full rounded-2xl border border-rose-200 bg-white px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-gold transition-colors"
+
+
+export function BookingWizard({ onClose, onLogin }: BookingWizardProps) {
+
+  const { user } = useAuth()
   const [step, setStep] = useState(1)
   const [service, setService] = useState<Service | null>(null)
   const [master, setMaster] = useState<Employee | "any" | null>(null)
@@ -28,7 +37,12 @@ export function BookingWizard({ onClose }: BookingWizardProps) {
 
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<ApiError | null>(null)
-  const [created, setCreated] = useState<Booking | null>(null)
+  const [created, setCreated] = useState<CreatedBooking | null>(null)
+  const [guestName, setGuestName] = useState("")
+  const [guestPhone, setGuestPhone] = useState("")
+
+  const isGuest = !user
+  const guestValid = guestName.trim().length >= 2 && guestPhone.replace(/\D/g, "").length >= 10
 
   const services = useApi(catalogApi.services)
   const employees = useApi(
@@ -87,16 +101,19 @@ export function BookingWizard({ onClose }: BookingWizardProps) {
 
   const submit = async () => {
     if (!service || !date || !time || !employeeId) return
+    if (isGuest && !guestValid) return
     setSubmitting(true)
     setSubmitError(null)
     try {
+      const payload = { employee: employeeId, service: service.id, date, start_time: time }
       setCreated(
-        await bookingApi.create({
-          employee: employeeId,
-          service: service.id,
-          date,
-          start_time: time,
-        }),
+        isGuest
+          ? await bookingApi.createGuest({
+              ...payload,
+              guest_name: guestName.trim(),
+              guest_phone: guestPhone.trim(),
+            })
+          : await bookingApi.create(payload),
       )
     } catch (e) {
       const err = toApiError(e)
@@ -159,9 +176,16 @@ export function BookingWizard({ onClose }: BookingWizardProps) {
                 </div>
               </div>
               <h3 className="text-3xl font-serif text-foreground">Вы записаны!</h3>
-              <p className="text-sm text-yellow-800 bg-yellow-50 border border-yellow-200 rounded-full px-4 py-1">
-                Запись ждёт подтверждения салоном — статус виден в личном кабинете
-              </p>
+              {isGuest ? (
+                <p className="text-sm text-yellow-800 bg-yellow-50 border border-yellow-200 rounded-2xl px-4 py-2">
+                  Запись ждёт подтверждения салоном. Мы свяжемся с вами по номеру {guestPhone.trim()}.
+                  Чтобы изменить или отменить запись, позвоните в салон.
+                </p>
+              ) : (
+                <p className="text-sm text-yellow-800 bg-yellow-50 border border-yellow-200 rounded-full px-4 py-1">
+                  Запись ждёт подтверждения салоном — статус виден в личном кабинете
+                </p>
+              )}
               <p className="text-muted-foreground">
                 {created.service_name} • {created.employee_name}
                 <br />
@@ -356,6 +380,61 @@ export function BookingWizard({ onClose }: BookingWizardProps) {
                       </span>
                     </div>
                   </div>
+                  {isGuest && (
+                    <div className="w-full bg-white rounded-2xl border border-rose-100 p-6 text-left space-y-4">
+                      <div>
+                        <h4 className="font-medium text-foreground">Ваши контакты</h4>
+                        <p className="text-sm text-muted-foreground">
+                          Запись без регистрации. Салон позвонит, если нужно уточнить детали.
+                        </p>
+                      </div>
+
+                      <div>
+                        <label htmlFor="guest-name" className="block text-sm font-medium text-foreground mb-1">
+                          Имя
+                        </label>
+                        <input
+                          id="guest-name"
+                          value={guestName}
+                          onChange={(e) => setGuestName(e.target.value)}
+                          maxLength={100}
+                          autoComplete="name"
+                          className={guestInputClass}
+                        />
+                      </div>
+
+                      <div>
+                        <label htmlFor="guest-phone" className="block text-sm font-medium text-foreground mb-1">
+                          Телефон
+                        </label>
+                        <input
+                          id="guest-phone"
+                          type="tel"
+                          inputMode="tel"
+                          autoComplete="tel"
+                          value={guestPhone}
+                          onChange={(e) => setGuestPhone(e.target.value)}
+                          maxLength={30}
+                          placeholder="+7 900 000-00-00"
+                          className={guestInputClass}
+                        />
+                      </div>
+
+                      {onLogin && (
+                        <p className="text-sm text-muted-foreground">
+                          Уже есть аккаунт?{" "}
+                          <button type="button" onClick={onLogin} className="text-gold hover:text-gold-hover font-medium">
+                            Войти
+                          </button>
+                          , чтобы управлять записями в личном кабинете.
+                        </p>
+                      )}
+
+                      <p className="text-xs text-muted-foreground">
+                        Нажимая «Подтвердить запись», вы соглашаетесь на обработку персональных данных для оформления записи.
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
             </>
@@ -404,7 +483,7 @@ export function BookingWizard({ onClose }: BookingWizardProps) {
               ) : (
                 <button
                   onClick={submit}
-                  disabled={submitting}
+                  disabled={submitting || (isGuest && !guestValid)}
                   className="bg-gold hover:bg-gold-hover text-white px-8 py-3 rounded-full font-medium transition-colors shadow-md flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <CheckCircle2 className="size-5" />

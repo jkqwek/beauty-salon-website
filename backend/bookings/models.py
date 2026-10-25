@@ -45,7 +45,9 @@ class Booking(models.Model):
         ("completed", "Выполнена"),
         ("cancelled", "Отменена"),
     ]
-    client = models.ForeignKey(User, on_delete=models.CASCADE, related_name='bookings')
+    client = models.ForeignKey(User, on_delete=models.CASCADE, related_name='bookings', null=True, blank=True)
+    guest_name = models.CharField("Имя гостя", max_length=100, blank=True, default="")
+    guest_phone = models.CharField("Телефон гостя", max_length=20, blank=True, default="")
     employee = models.ForeignKey(Employee, on_delete=models.CASCADE, related_name='bookings')
     service = models.ForeignKey(Service, on_delete=models.CASCADE, related_name='bookings')
     date = models.DateField("Дата записи")
@@ -64,9 +66,26 @@ class Booking(models.Model):
         verbose_name = "Запись"
         verbose_name_plural = "Записи"
         ordering = ["-date", "-start_time"]
-    
+
+    @property
+    def is_guest(self):
+        return self.client_id is None
+
+    @property
+    def display_name(self):
+        if self.client:
+            return self.client.get_full_name() or self.client.username
+        return self.guest_phone or "Гость"
+
+    @property
+    def display_phone(self):
+        if self.client:
+            profile = getattr(self.client, "profile", None)
+            return getattr(profile, "phone", "") or ""
+        return self.guest_phone
+
     def __str__(self):
-        return f"{self.client} → {self.employee} ({self.date} {self.start_time})"
+        return f"{self.display_name} → {self.employee} ({self.date} {self.start_time})"
 
 
 class TimeOff(models.Model):
@@ -128,7 +147,7 @@ class Review(models.Model):
         ordering = ["-created_at"]
 
     def __str__(self):
-        return f"{self.booking.client} — {self.get_status_display()}"
+        return f"{self.booking.display_name} — {self.get_status_display()}"
 
 
 class CancellationPolicy(models.Model):

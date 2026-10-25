@@ -10,6 +10,8 @@ import { ErrorMessage } from "../components/ErrorMessage"
 import { ImageWithFallback } from "../components/ImageWithFallback"
 import { Clock, Download } from "lucide-react"
 import { ShareButtons } from "../components/ShareButtons"
+import { SuggestServiceForm } from "../components/SuggestServiceForm"
+
 
 const CATEGORIES = ["Все", "Волосы", "Ногти", "Кожа", "Массаж"]
 
@@ -150,6 +152,12 @@ export function ServicesPage() {
             </div>
           ))}
         </div>
+        
+        {/* Предложить услугу */}
+        <div className="mt-16">
+          <SuggestServiceForm />
+        </div>
+      
       </div>
     </div>
   )

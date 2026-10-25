@@ -3,8 +3,8 @@ from django.shortcuts import render
 from datetime import datetime, timedelta
 from decimal import Decimal
 
-from rest_framework.decorators import action, api_view, permission_classes
-from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
+from rest_framework.decorators import action, api_view, permission_classes, throttle_classes
+from rest_framework.exceptions import NotAuthenticated, NotFound, PermissionDenied, ValidationError
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import mixins, serializers, status, viewsets
@@ -14,8 +14,11 @@ from .models import ACTIVE_STATUSES, CancellationPolicy, Review, SalonClosure, S
 from .serializers import (
     AdminBookingSerializer, AdminReviewSerializer, BookingCreateSerializer, BookingSerializer,
     CancellationPolicySerializer, PublicReviewSerializer, ReviewCreateSerializer, SalonClosureSerializer,
-    ScheduleSerializer, TimeOffSerializer,
+    ScheduleSerializer, TimeOffSerializer, GuestBookingCreateSerializer
 )
+
+from .throttles import GuestBookingThrottle, PublicSlotsThrottle
+
 from .services import (
     MAX_DAYS_AHEAD, available_days, cancel_deadline_error, closure_conflicts, closures_between, conflict_label,
     get_free_slots, recalc_master_rating, reschedule,
@@ -47,6 +50,8 @@ def _own_booking(request):
     booking_id = request.query_params.get("booking_id")
     if not booking_id:
         return None
+    if not request.user.is_authenticated:
+        raise NotAuthenticated("Войдите, чтобы перенести запись.")
     if not booking_id.isdigit():
         raise ValidationError({"booking_id": "Должно быть числом."})
     return get_object_or_404(Booking, pk=booking_id, client=request.user)
@@ -64,6 +69,7 @@ def _service(request, booking):
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
+@throttle_classes([PublicSlotsThrottle])
 def available_slots(request):
     booking = _own_booking(request)
     employee_id = booking.employee_id if booking else _int_param(request.query_params, "employee_id")
@@ -75,6 +81,7 @@ def available_slots(request):
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
+@throttle_classes([PublicSlotsThrottle])
 def available_days_view(request):
     """Календарь месяца (?month=ГГГГ-ММ): дни со свободным временем и подписи праздников.
     employee_id не указан — подходит любой мастер, оказывающий услугу."""
@@ -129,6 +136,25 @@ def create_booking(request):
     booking = serializer.save()
     return Response(BookingSerializer(booking).data, status=status.HTTP_201_CREATED)
 
+@api_view(["POST"])
+@permission_classes([AllowAny])
+@throttle_classes([GuestBookingThrottle])
+def create_guest_booking(request):
+    """Запись без регистрации: имя и телефон вместо аккаунта."""
+    serializer = GuestBookingCreateSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+    booking = serializer.save()
+    # Гостю отдаём только то, что нужно для экрана «Запись создана», без служебных полей
+    return Response({
+        "id": booking.id,
+        "date": booking.date,
+        "start_time": booking.start_time,
+        "end_time": booking.end_time,
+        "service_name": booking.service.name,
+        "employee_name": booking.employee.full_name,
+        "price": str(booking.price) if booking.price is not None else None,
+        "status": booking.status,
+    }, status=status.HTTP_201_CREATED)
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])

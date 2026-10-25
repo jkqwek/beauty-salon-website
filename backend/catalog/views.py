@@ -9,13 +9,14 @@ from rest_framework.parsers import MultiPartParser
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from decimal import Decimal, InvalidOperation
-
+from rest_framework import generics, viewsets
+from rest_framework.throttling import ScopedRateThrottle
 from config.images import delete_image, save_image
 
 from bookings.models import ACTIVE_STATUSES
 from .models import Promotion, Service, Employee
 from .permissions import IsAdminUser
-from .serializers import EmployeePublicSerializer, EmployeeSerializer, PromotionSerializer, ServiceSerializer
+from .serializers import EmployeePublicSerializer, EmployeeSerializer, PromotionSerializer, ServiceSerializer, ServiceSuggestionSerializer
 
 
 class PublicReadAdminWrite:
@@ -24,6 +25,12 @@ class PublicReadAdminWrite:
             return [AllowAny()]
         return [IsAdminUser()]
 
+class ServiceSuggestionCreateView(generics.CreateAPIView):
+    """Публичная форма «Предложить услугу»: принимает предложения от любого посетителя, но не чаще лимита."""
+    serializer_class = ServiceSuggestionSerializer
+    permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "suggestion"
 
 class ServiceViewSet(PublicReadAdminWrite, viewsets.ModelViewSet):
     """Услуги. Удаление мягкое: услуга уходит в «Удалённые» (?deleted=1), её можно восстановить."""

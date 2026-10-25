@@ -1,3 +1,4 @@
+import re
 from datetime import datetime, timedelta
 
 from django.utils import timezone
@@ -5,24 +6,23 @@ from rest_framework import serializers
 
 from catalog.models import Employee, Service, price_on
 from config.images import RelativeImageField
-from .models import Booking, CancellationPolicy, Review, SalonClosure, Schedule, TimeOff
+from .models import Booking, CancellationPolicy, Review, SalonClosure, Schedule, TimeOff, ACTIVE_STATUSES
 from .services import MAX_DAYS_AHEAD, closure_conflicts, conflict_label, get_free_slots, slot_taken
 
 BLOCKED_MESSAGE = "Онлайн-запись недоступна. Свяжитесь с салоном."
+MAX_ACTIVE_GUEST_BOOKINGS = 3
 
+def normalize_phone(raw):
+    """«8 (912) 345-67-89» → «+79123456789». Если это не российский номер, вернёт None."""
+    digits = re.sub(r"\D", "", raw or "")
+    if len(digits) == 11 and digits[0] in "78":
+        return "+7" + digits[1:]
+    if len(digits) == 10:
+        return "+7" + digits
+    return None
 
-class BookingSerializer(serializers.ModelSerializer):
-    service_name = serializers.CharField(source="service.name", read_only=True)
-    employee_name = serializers.CharField(source="employee.full_name", read_only=True)
-    review_status = serializers.CharField(source="review.status", read_only=True)  # null — отзыва нет
-
-    class Meta:
-        model = Booking
-        fields = '__all__'
-        read_only_fields = ("client", "end_time", "status", "created_at")
-
-
-class BookingCreateSerializer(serializers.Serializer):
+class BaseBookingCreateSerializer(serializers.Serializer):
+    """Общая часть записи: услуга, мастер, дата, время и проверка свободного слота."""
     employee = serializers.PrimaryKeyRelatedField(queryset=Employee.objects.filter(is_active=True))
     service = serializers.PrimaryKeyRelatedField(queryset=Service.objects.filter(is_active=True))
     date = serializers.DateField()
@@ -38,11 +38,7 @@ class BookingCreateSerializer(serializers.Serializer):
             )
         return value
 
-    def validate(self, attrs):
-        profile = getattr(self.context["request"].user, "profile", None)
-        if profile and profile.is_blocked:  # чёрный список: без объяснений, нейтральный текст
-            raise serializers.ValidationError(BLOCKED_MESSAGE)
-
+    def check_slot(self, attrs):
         employee, service = attrs["employee"], attrs["service"]
 
         if not employee.services.filter(pk=service.pk).exists():
@@ -53,23 +49,49 @@ class BookingCreateSerializer(serializers.Serializer):
             raise serializers.ValidationError({"start_time": "Это время недоступно. Выберите другое."})
         return attrs
 
-    def create(self, validated_data):
+    def booking_fields(self, validated_data):
+        """Поля записи, одинаковые для вошедшего клиента и для гостя."""
         service = validated_data["service"]
         start = datetime.combine(validated_data["date"], validated_data["start_time"])
+        return {
+            "employee": validated_data["employee"],
+            "service": service,
+            "date": validated_data["date"],
+            "start_time": validated_data["start_time"],
+            "end_time": (start + timedelta(minutes=service.duration_minutes)).time(),
+            "status": "pending",  # ждёт подтверждения салоном, но время уже занято
+            "price": price_on(service, validated_data["date"])[0],  # со скидкой по дате визита
+        }
+
+
+class BookingSerializer(serializers.ModelSerializer):
+    service_name = serializers.CharField(source="service.name", read_only=True)
+    employee_name = serializers.CharField(source="employee.full_name", read_only=True)
+    review_status = serializers.CharField(source="review.status", read_only=True)  # null — отзыва нет
+
+    class Meta:
+        model = Booking
+        fields = '__all__'
+        read_only_fields = ("client", "end_time", "status", "created_at")
+
+
+class BookingCreateSerializer(BaseBookingCreateSerializer):
+    def validate(self, attrs):
+        profile = getattr(self.context["request"].user, "profile", None)
+        if profile and profile.is_blocked:  # чёрный список: без объяснений, нейтральный текст
+            raise serializers.ValidationError(BLOCKED_MESSAGE)
+        return self.check_slot(attrs)
+
+    def create(self, validated_data):
         return Booking.objects.create(
             client=self.context["request"].user,
-            employee=validated_data["employee"],
-            service=service,
-            date=validated_data["date"],
-            start_time=validated_data["start_time"],
-            end_time=(start + timedelta(minutes=service.duration_minutes)).time(),
-            status="pending",  # ждёт подтверждения салоном, но время уже занято
-            price=price_on(service, validated_data["date"])[0],  # со скидкой по дате визита
+            **self.booking_fields(validated_data),
         )
 
 class AdminBookingSerializer(BookingSerializer):
     """Запись в панели: видно клиента и его метки, менять можно только статус."""
     client_name = serializers.SerializerMethodField()
+    client_phone = serializers.SerializerMethodField()
     service_name = serializers.SerializerMethodField()
     client_is_regular = serializers.BooleanField(source="client.profile.is_regular", read_only=True)
     client_is_blocked = serializers.BooleanField(source="client.profile.is_blocked", read_only=True)
@@ -78,7 +100,10 @@ class AdminBookingSerializer(BookingSerializer):
         read_only_fields = [f.name for f in Booking._meta.fields if f.name != "status"]
 
     def get_client_name(self, b):
-        return b.client.get_full_name() or b.client.username
+        return b.display_name
+
+    def get_client_phone(self, b):
+        return b.display_phone
 
     def get_service_name(self, b):
         return b.service.name + (" (удалена)" if b.service.deleted_at else "")
@@ -169,7 +194,10 @@ class PublicReviewSerializer(serializers.ModelSerializer):
                   "employee_id", "employee_name", "service_name")
 
     def get_author(self, review):
-        return public_author(review.booking.client)
+        client = review.booking.client
+        if client is None:
+            return "Гость"
+        return public_author(client)
 
 
 class AdminReviewSerializer(PublicReviewSerializer):
@@ -182,5 +210,47 @@ class AdminReviewSerializer(PublicReviewSerializer):
         read_only_fields = ("text", "created_at")
 
     def get_client_name(self, review):
-        user = review.booking.client
-        return user.get_full_name() or user.username
+        return review.booking.display_name
+
+class GuestBookingCreateSerializer(BaseBookingCreateSerializer):
+    """Запись без регистрации: клиент указывает имя и телефон."""
+    guest_name = serializers.CharField(min_length=2, max_length=100)
+    guest_phone = serializers.CharField(max_length=30)
+
+    def validate_guest_phone(self, value):
+        phone = normalize_phone(value)
+        if phone is None:
+            raise serializers.ValidationError("Введите телефон в формате +7 900 000-00-00.")
+        return phone
+
+    @staticmethod
+    def _phone_is_blocked(phone):
+        """Тот, кто в чёрном списке, не должен обходить его записью «гостем»."""
+        from accounts.models import ClientProfile  # импорт внутри метода: чтобы не создать круговой импорт
+
+        blocked = ClientProfile.objects.filter(is_blocked=True).exclude(phone="").values_list("phone", flat=True)
+        return any(normalize_phone(p) == phone for p in blocked)
+
+    def validate(self, attrs):
+        phone = attrs["guest_phone"]
+
+        if self._phone_is_blocked(phone):
+            raise serializers.ValidationError(BLOCKED_MESSAGE)
+
+        active = Booking.objects.filter(
+            client__isnull=True, guest_phone=phone,
+            status__in=ACTIVE_STATUSES, date__gte=timezone.localdate(),
+        ).count()
+        if active >= MAX_ACTIVE_GUEST_BOOKINGS:
+            raise serializers.ValidationError(
+                {"guest_phone": "На этот номер уже оформлено максимальное число записей. Свяжитесь с салоном."}
+            )
+
+        return self.check_slot(attrs)
+
+    def create(self, validated_data):
+        return Booking.objects.create(
+            guest_name=validated_data["guest_name"],
+            guest_phone=validated_data["guest_phone"],
+            **self.booking_fields(validated_data),
+        )

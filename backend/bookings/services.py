@@ -138,5 +138,4 @@ def closure_conflicts(date_from, date_to, open_time=None, close_time=None):
 
 
 def conflict_label(b):
-    client = b.client.get_full_name() or b.client.username
-    return f"{b.date:%d.%m} {b.start_time:%H:%M} — {client}, {b.service.name} ({b.employee.full_name})"
+    return f"{b.date:%d.%m} {b.start_time:%H:%M} — {b.display_name}, {b.service.name} ({b.employee.full_name})"

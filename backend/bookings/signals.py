@@ -11,7 +11,7 @@ def send_booking_notifications(sender, instance, created, **kwargs):
     """Новая запись → уведомление админу и мастеру (если мастер привязал Telegram)."""
     if not created:
         return
-    client_name = instance.client.get_full_name() or instance.client.username
+    client_name = instance.display_name
     when = f"{instance.date:%d.%m.%Y} {instance.start_time:%H:%M}"
 
     notify_admin_new_appointment(client_name, instance.service.name, instance.employee.full_name, when)

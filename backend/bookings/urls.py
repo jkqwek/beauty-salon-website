@@ -14,6 +14,8 @@ from .views import (
     price_view,
     leave_review,
     upcoming_closures,
+    top_services,
+    promo_check,
 )
 
 urlpatterns = [
@@ -31,4 +33,6 @@ urlpatterns = [
     path("price/", price_view, name="booking-price"),
     path("<int:booking_id>/review/", leave_review, name="leave-review"),
     path("closures/upcoming/", upcoming_closures, name="upcoming-closures"),
+    path("top-services/", top_services, name="top-services"),
+    path("promo/", promo_check, name="promo-check"),
 ]

@@ -24,7 +24,7 @@ from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from accounts.views import AdminUserViewSet, RegisterView, me, me_avatar, me_bonus, change_password, password_reset, password_reset_confirm
 from bookings.views import (
     AdminBookingViewSet, AdminReviewViewSet, SalonClosureViewSet, ScheduleViewSet, TimeOffViewSet,
-    panel_counters, public_reviews, salon_load, today_stats,
+    panel_counters, public_reviews, salon_load, salon_stats, today_stats,
 )
 from catalog.views import PromotionViewSet
 
@@ -55,6 +55,7 @@ urlpatterns = [
     path("api/admin/load/", salon_load, name="salon-load"),
     path("api/admin/counters/", panel_counters, name="panel-counters"),
     path("api/admin/stats/today/", today_stats, name="today-stats"),
+    path("api/admin/stats/summary/", salon_stats, name="salon-stats"),
     path("api/reviews/", public_reviews, name="public-reviews"),
     path("api/admin/", include(admin_router.urls)),
     

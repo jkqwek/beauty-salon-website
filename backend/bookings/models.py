@@ -1,3 +1,4 @@
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from catalog.models import Employee, Service
 from django.contrib.auth import get_user_model
@@ -59,6 +60,9 @@ class Booking(models.Model):
     actual_end = models.DateTimeField("Фактическое окончание", null=True, blank=True)
     rating = models.PositiveSmallIntegerField("Оценка клиента", null=True, blank=True)
     survey_sent = models.BooleanField("Опрос отправлен", default=False)
+    comment = models.CharField("Комментарий клиента", max_length=500, blank=True)
+    promo_code = models.ForeignKey("PromoCode", on_delete=models.SET_NULL, null=True, blank=True,
+                                   related_name="bookings", verbose_name="Промокод")
 
     class Meta:
         verbose_name = "Запись"
@@ -145,6 +149,8 @@ class ReviewPhoto(models.Model):
 
 
 BONUS_PERCENT = 5  # столько процентов цены выполненного визита возвращается баллами (1 балл = 1 ₽)
+REVIEW_BONUS = 50  # баллов за отзыв, когда салон его опубликовал
+REFERRAL_BONUS = 200  # баллов и пригласившему, и другу после первого выполненного визита друга
 
 
 class BonusOperation(models.Model):
@@ -154,6 +160,8 @@ class BonusOperation(models.Model):
     amount = models.IntegerField("Баллы")
     # начисление за визит; живёт, пока запись в статусе «выполнена»
     booking = models.OneToOneField(Booking, on_delete=models.CASCADE, null=True, blank=True, related_name="bonus")
+    # начисление за опубликованный отзыв — одно на отзыв
+    review = models.OneToOneField(Review, on_delete=models.CASCADE, null=True, blank=True, related_name="bonus")
     comment = models.CharField("Комментарий", max_length=200, blank=True)
     created_at = models.DateTimeField("Дата", auto_now_add=True)
 
@@ -179,3 +187,40 @@ class CancellationPolicy(models.Model):
     @classmethod
     def load(cls):
         return cls.objects.get_or_create(pk=1)[0]
+
+
+class PromoCode(models.Model):
+    """Промокод: клиент вводит его при записи, скидка считается от цены визита (после акций)."""
+    code = models.CharField("Код", max_length=30, unique=True)
+    discount_percent = models.PositiveSmallIntegerField(
+        "Скидка, %", validators=[MinValueValidator(1), MaxValueValidator(100)])
+    valid_from = models.DateField("Действует с", null=True, blank=True)
+    valid_to = models.DateField("Действует по", null=True, blank=True)
+    max_uses = models.PositiveIntegerField("Лимит использований", null=True, blank=True)  # пусто — без лимита
+    is_active = models.BooleanField("Активен", default=True)
+
+    class Meta:
+        verbose_name = "Промокод"
+        verbose_name_plural = "Промокоды"
+
+    def save(self, *args, **kwargs):
+        self.code = self.code.strip().upper()
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.code} (−{self.discount_percent}%)"
+
+
+class Referral(models.Model):
+    """«Приведи друга»: друг зарегистрировался по коду клиента. Баллы обоим — после первого визита друга."""
+    referrer = models.ForeignKey(User, on_delete=models.CASCADE, related_name="referrals")
+    friend = models.OneToOneField(User, on_delete=models.CASCADE, related_name="referral")
+    rewarded = models.BooleanField("Бонус начислен", default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Приглашение друга"
+        verbose_name_plural = "Приглашения друзей"
+
+    def __str__(self):
+        return f"{self.referrer} → {self.friend}"

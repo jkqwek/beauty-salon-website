@@ -3,6 +3,7 @@ from django.utils.encoding import force_bytes, force_str
 from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 from .serializers import (ChangePasswordSerializer, PasswordResetRequestSerializer,
                           PasswordResetConfirmSerializer)
+import re
 from datetime import timedelta
 
 from django.contrib.auth import get_user_model
@@ -16,9 +17,9 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.parsers import MultiPartParser
 from rest_framework.response import Response
 
-from bookings.models import BONUS_PERCENT, BonusOperation
-from bookings.serializers import BonusOperationSerializer
-from bookings.services import bonus_balance
+from bookings.models import BONUS_PERCENT, REFERRAL_BONUS, REVIEW_BONUS, BonusOperation, Booking
+from bookings.serializers import BonusOperationSerializer, BookingSerializer
+from bookings.services import bonus_balance, loyalty, ref_code
 from catalog.permissions import IsAdminUser
 from config.images import delete_image, save_image
 from .models import ClientProfile
@@ -61,7 +62,9 @@ def me_avatar(request):
 
 def _bonus_summary(user):
     operations = user.bonus_operations.select_related("booking")
-    return {"balance": bonus_balance(user), "percent": BONUS_PERCENT,
+    return {"balance": bonus_balance(user), "percent": BONUS_PERCENT, "review_bonus": REVIEW_BONUS,
+            "level": loyalty(user),
+            "referral": {"code": ref_code(user), "bonus": REFERRAL_BONUS, "invited": user.referrals.count()},
             "operations": BonusOperationSerializer(operations, many=True).data}
 
 
@@ -72,6 +75,21 @@ def me_bonus(request):
     return Response(_bonus_summary(request.user))
 
 
+def _search_q(text):
+    """Поиск клиента по имени, логину, email или телефону (8 900…, +7 (900)… — любое написание)."""
+    q = Q()
+    for word in text.split():
+        part = (Q(username__icontains=word) | Q(first_name__icontains=word)
+                | Q(last_name__icontains=word) | Q(email__icontains=word))
+        digits = re.sub(r"\D", "", word)
+        if len(digits) >= 3:
+            if digits[0] == "8":  # номер 8 900… хранится как +7 900…
+                digits = "7" + digits[1:]
+            part |= Q(profile__phone__contains=digits)
+        q &= part
+    return q
+
+
 class AdminUserViewSet(mixins.ListModelMixin, mixins.UpdateModelMixin, viewsets.GenericViewSet):
     """Панель: база клиентов со статистикой визитов, смена статуса, контактов и меток."""
     serializer_class = AdminUserSerializer
@@ -79,8 +97,12 @@ class AdminUserViewSet(mixins.ListModelMixin, mixins.UpdateModelMixin, viewsets.
 
     def get_queryset(self):
         half_year_ago = timezone.localdate() - timedelta(days=REGULAR_CANDIDATE_DAYS)
+        users = User.objects.select_related("profile", "employee_profile")
+        search = self.request.query_params.get("search", "").strip()  # ?search=анна или ?search=900123
+        if search:
+            users = users.filter(_search_q(search))
         return (
-            User.objects.select_related("profile", "employee_profile")
+            users
             .annotate(
                 visits=Count("bookings", filter=COMPLETED),
                 recent_visits=Count("bookings", filter=COMPLETED & Q(bookings__date__gte=half_year_ago)),
@@ -94,6 +116,13 @@ class AdminUserViewSet(mixins.ListModelMixin, mixins.UpdateModelMixin, viewsets.
             )
             .order_by("-date_joined")
         )
+
+    @action(detail=True, methods=["get"])
+    def bookings(self, request, pk=None):
+        """История записей конкретного клиента."""
+        user = get_object_or_404(User, pk=pk)
+        items = Booking.objects.filter(client=user).select_related("service", "employee", "review")
+        return Response(BookingSerializer(items, many=True).data)
 
     @action(detail=True, methods=["get", "post"])
     def bonus(self, request, pk=None):

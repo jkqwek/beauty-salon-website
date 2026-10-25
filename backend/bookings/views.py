@@ -22,7 +22,7 @@ from .serializers import (
 )
 from .services import (
     MAX_DAYS_AHEAD, available_days, cancel_deadline_error, closure_conflicts, closures_between, conflict_label,
-    get_free_slots, recalc_master_rating, reschedule,
+    apply_promo, find_promo, get_free_slots, recalc_master_rating, reschedule,
 )
 from django.db.models import Avg, Count, F, Q, Sum
 from django.shortcuts import get_object_or_404
@@ -125,6 +125,21 @@ def price_view(request):
     })
 
 
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def promo_check(request):
+    """Проверка промокода до записи: ?code= (+ service_id и date — тогда вернётся цена со скидкой)."""
+    promo, error = find_promo(request.query_params.get("code"), request.user)
+    if not promo:
+        raise ValidationError({"code": error or "Введите промокод."})
+    data = {"code": promo.code, "discount_percent": promo.discount_percent}
+    if request.query_params.get("service_id") and request.query_params.get("date"):
+        service = get_object_or_404(Service, pk=_int_param(request.query_params, "service_id"))
+        price, _ = price_on(service, _date_param(request.query_params, "date"))
+        data["price"] = str(apply_promo(price, promo))
+    return Response(data)
+
+
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def create_booking(request):
@@ -209,6 +224,54 @@ def popular_services_report(request):
         }
         for r in rows
     ])
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def top_services(request):
+    """Топ популярных услуг по числу неотменённых записей: ?limit=5 (по умолчанию 5, не больше 20)."""
+    limit = min(_int_param(request.query_params, "limit") if request.query_params.get("limit") else 5, 20)
+    services = (
+        Service.objects.filter(is_active=True)
+        .annotate(bookings_count=Count("bookings", filter=Q(bookings__status__in=("pending", "confirmed", "completed"))))
+        .filter(bookings_count__gt=0)
+        .order_by("-bookings_count", "name")[:limit]
+    )
+    return Response([
+        {"id": s.id, "name": s.name, "category": s.category, "price": str(s.price),
+         "bookings_count": s.bookings_count}
+        for s in services
+    ])
+
+
+@api_view(["GET"])
+@permission_classes([IsAdminUser])
+def salon_stats(request):
+    """Общая статистика салона (панель). Необязательно: ?date_from=&date_to= — по дате записи."""
+    bookings = Booking.objects.all()
+    if request.query_params.get("date_from"):
+        bookings = bookings.filter(date__gte=_date_param(request.query_params, "date_from"))
+    if request.query_params.get("date_to"):
+        bookings = bookings.filter(date__lte=_date_param(request.query_params, "date_to"))
+    by_status = {code: 0 for code, _ in Booking.STATUS_CHOISES}
+    for row in bookings.values("status").annotate(n=Count("id")):
+        by_status[row["status"]] = row["n"]
+    total = sum(by_status.values())
+    completed = bookings.filter(status="completed")
+    money = completed.aggregate(revenue=Sum("price"), average=Avg("price"))
+    top = completed.values("service__name").annotate(n=Count("id")).order_by("-n").first()
+    return Response({
+        "clients": User.objects.filter(is_staff=False).count(),
+        "new_clients_30d": User.objects.filter(is_staff=False, date_joined__gte=timezone.now() - timedelta(days=30)).count(),
+        "masters": Employee.objects.filter(is_active=True).count(),
+        "services": Service.objects.filter(is_active=True).count(),
+        "bookings_total": total,
+        "by_status": by_status,
+        "cancel_rate": round(100 * by_status["cancelled"] / total, 1) if total else 0,
+        "revenue": str(money["revenue"] or 0),
+        "average_check": str(round(money["average"], 2)) if money["average"] else "0",
+        "top_service": top["service__name"] if top else None,
+    })
+
 
 @api_view(["GET"])
 @permission_classes([IsAdminUser])

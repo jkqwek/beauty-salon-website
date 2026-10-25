@@ -1,12 +1,14 @@
 from collections import defaultdict
 from datetime import datetime, timedelta
+from decimal import ROUND_HALF_UP, Decimal
 
 from django.db.models import Avg, Q, Sum
 from django.utils import timezone
 
 from catalog.models import price_on
 from .models import (
-    ACTIVE_STATUSES, BONUS_PERCENT, BonusOperation, Booking, CancellationPolicy, SalonClosure, Schedule, TimeOff,
+    ACTIVE_STATUSES, BONUS_PERCENT, REFERRAL_BONUS, REVIEW_BONUS, BonusOperation, Booking, CancellationPolicy,
+    PromoCode, Referral, SalonClosure, Schedule, TimeOff, User,
 )
 
 SLOT_STEP = timedelta(minutes=15)
@@ -91,6 +93,16 @@ def slot_taken(employee_id, day, start, end, exclude_id=None):
     )
 
 
+def client_busy(client_id, day, start, end, exclude_id=None):
+    """Есть ли у клиента другая активная запись (к любому мастеру), пересекающаяся с интервалом."""
+    return (
+        Booking.objects.filter(client_id=client_id, date=day, start_time__lt=end, end_time__gt=start,
+                               status__in=ACTIVE_STATUSES)
+        .exclude(pk=exclude_id)
+        .exists()
+    )
+
+
 def cancel_deadline_error(booking):
     """Текст ошибки, если отменять/переносить уже поздно по правилу отмены, иначе None."""
     hours = CancellationPolicy.load().deadline_hours
@@ -116,10 +128,14 @@ def reschedule(booking, day, start_time):
     if start_time.strftime("%H:%M") not in free:
         return "Это время недоступно, выберите другое."
     start = datetime.combine(day, start_time)
-    booking.date, booking.start_time = day, start_time
-    booking.end_time = (start + timedelta(minutes=booking.service.duration_minutes)).time()
+    end_time = (start + timedelta(minutes=booking.service.duration_minutes)).time()
+    if client_busy(booking.client_id, day, start_time, end_time, exclude_id=booking.pk):
+        return "У вас уже есть запись на это время."
+    booking.date, booking.start_time, booking.end_time = day, start_time, end_time
     booking.status = "pending"
     booking.price, _ = price_on(booking.service, day)
+    if booking.promo_code_id:  # скидка по промокоду сохраняется при переносе
+        booking.price = apply_promo(booking.price, booking.promo_code)
     booking.save()
     return None
 
@@ -165,3 +181,93 @@ def sync_visit_bonus(booking):
 
 def bonus_balance(user):
     return user.bonus_operations.aggregate(total=Sum("amount"))["total"] or 0
+
+
+# ---------- промокоды ----------
+
+def find_promo(code, user):
+    """Промокод для клиента: (промокод, None) или (None, текст ошибки). Пустой код — (None, None)."""
+    code = (code or "").strip().upper()
+    if not code:
+        return None, None
+    promo = PromoCode.objects.filter(code=code, is_active=True).first()
+    today = timezone.localdate()
+    if not promo or (promo.valid_from and today < promo.valid_from) or (promo.valid_to and today > promo.valid_to):
+        return None, "Промокод не найден или не действует."
+    used = promo.bookings.exclude(status="cancelled")
+    if promo.max_uses is not None and used.count() >= promo.max_uses:
+        return None, "Лимит использований промокода исчерпан."
+    if used.filter(client=user).exists():
+        return None, "Вы уже использовали этот промокод."
+    return promo, None
+
+
+def apply_promo(price, promo):
+    """Цена со скидкой по промокоду (округление до рубля, как у акций)."""
+    price = (price * (100 - promo.discount_percent) / 100).quantize(Decimal("1"), ROUND_HALF_UP)
+    return price.quantize(Decimal("0.01"))
+
+
+# ---------- уровни лояльности ----------
+
+LOYALTY_LEVELS = [  # от высшего к низшему: (ключ, название, порог суммы выполненных визитов, ₽)
+    ("gold", "Золото", Decimal(30000)),
+    ("silver", "Серебро", Decimal(10000)),
+    ("bronze", "Бронза", Decimal(0)),
+]
+
+
+def level_for(spent):
+    """Уровень по сумме выполненных визитов: ключ, название, сколько ₽ до следующего уровня."""
+    spent = Decimal(spent or 0)
+    for i, (key, name, threshold) in enumerate(LOYALTY_LEVELS):
+        if spent >= threshold:
+            upper = LOYALTY_LEVELS[i - 1] if i else None
+            return {
+                "key": key, "name": name, "total_spent": str(spent),
+                "next_level": upper[1] if upper else None,
+                "to_next": str(upper[2] - spent) if upper else None,
+            }
+
+
+def loyalty(user):
+    spent = Booking.objects.filter(client=user, status="completed").aggregate(s=Sum("price"))["s"]
+    return level_for(spent)
+
+
+# ---------- бонусы за отзыв и «приведи друга» ----------
+
+def sync_review_bonus(review):
+    """Баллы за отзыв — один раз, когда салон его опубликовал."""
+    if review.status == "published":
+        BonusOperation.objects.get_or_create(
+            review=review,
+            defaults={"client_id": review.booking.client_id, "amount": REVIEW_BONUS, "comment": "За отзыв"},
+        )
+
+
+REF_PREFIX = "ALLURE-"
+
+
+def ref_code(user):
+    return f"{REF_PREFIX}{user.pk}"
+
+
+def find_referrer(code):
+    code = (code or "").strip().upper()
+    number = code[len(REF_PREFIX):]
+    if not code.startswith(REF_PREFIX) or not number.isdigit():
+        return None
+    return User.objects.filter(pk=int(number)).first()
+
+
+def reward_referral(booking):
+    """Первый выполненный визит приглашённого друга: баллы и ему, и пригласившему — один раз."""
+    if booking.status != "completed":
+        return
+    referral = Referral.objects.filter(friend_id=booking.client_id, rewarded=False).first()
+    if referral and Referral.objects.filter(pk=referral.pk, rewarded=False).update(rewarded=True):
+        BonusOperation.objects.create(client_id=referral.referrer_id, amount=REFERRAL_BONUS,
+                                      comment="Приведи друга: друг пришёл на визит")
+        BonusOperation.objects.create(client_id=referral.friend_id, amount=REFERRAL_BONUS,
+                                      comment="Приведи друга: бонус за первый визит")

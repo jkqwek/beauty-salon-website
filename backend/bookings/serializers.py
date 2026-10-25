@@ -6,7 +6,10 @@ from rest_framework import serializers
 from catalog.models import Employee, Service, price_on
 from config.images import RelativeImageField
 from .models import BonusOperation, Booking, CancellationPolicy, Review, SalonClosure, Schedule, TimeOff
-from .services import MAX_DAYS_AHEAD, closure_conflicts, conflict_label, get_free_slots, slot_taken
+from .services import (
+    MAX_DAYS_AHEAD, apply_promo, client_busy, closure_conflicts, conflict_label, find_promo, get_free_slots,
+    slot_taken,
+)
 
 BLOCKED_MESSAGE = "Онлайн-запись недоступна. Свяжитесь с салоном."
 
@@ -19,7 +22,7 @@ class BookingSerializer(serializers.ModelSerializer):
     class Meta:
         model = Booking
         fields = '__all__'
-        read_only_fields = ("client", "end_time", "status", "created_at")
+        read_only_fields = ("client", "end_time", "status", "created_at", "promo_code")
 
 
 class BookingCreateSerializer(serializers.Serializer):
@@ -27,6 +30,8 @@ class BookingCreateSerializer(serializers.Serializer):
     service = serializers.PrimaryKeyRelatedField(queryset=Service.objects.filter(is_active=True))
     date = serializers.DateField()
     start_time = serializers.TimeField(input_formats=["%H:%M"])
+    comment = serializers.CharField(required=False, allow_blank=True, max_length=500)  # пожелания к визиту
+    promo_code = serializers.CharField(required=False, allow_blank=True, max_length=30)
 
     def validate_date(self, value):
         today = timezone.localdate()
@@ -51,11 +56,25 @@ class BookingCreateSerializer(serializers.Serializer):
         slot = attrs["start_time"].strftime("%H:%M")
         if slot not in get_free_slots(employee.pk, service, attrs["date"]):
             raise serializers.ValidationError({"start_time": "Это время недоступно. Выберите другое."})
+
+        user = self.context["request"].user
+        end = (datetime.combine(attrs["date"], attrs["start_time"]) + timedelta(minutes=service.duration_minutes)).time()
+        if client_busy(user.pk, attrs["date"], attrs["start_time"], end):  # нельзя быть у двух мастеров сразу
+            raise serializers.ValidationError({"start_time": "У вас уже есть запись на это время."})
+
+        promo, error = find_promo(attrs.pop("promo_code", ""), user)
+        if error:
+            raise serializers.ValidationError({"promo_code": error})
+        attrs["promo"] = promo
         return attrs
 
     def create(self, validated_data):
         service = validated_data["service"]
         start = datetime.combine(validated_data["date"], validated_data["start_time"])
+        promo = validated_data.get("promo")
+        price = price_on(service, validated_data["date"])[0]  # со скидкой по дате визита
+        if promo:
+            price = apply_promo(price, promo)
         return Booking.objects.create(
             client=self.context["request"].user,
             employee=validated_data["employee"],
@@ -64,7 +83,9 @@ class BookingCreateSerializer(serializers.Serializer):
             start_time=validated_data["start_time"],
             end_time=(start + timedelta(minutes=service.duration_minutes)).time(),
             status="pending",  # ждёт подтверждения салоном, но время уже занято
-            price=price_on(service, validated_data["date"])[0],  # со скидкой по дате визита
+            price=price,
+            comment=validated_data.get("comment", "").strip(),
+            promo_code=promo,
         )
 
 class AdminBookingSerializer(BookingSerializer):

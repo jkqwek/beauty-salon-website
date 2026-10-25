@@ -6,8 +6,8 @@ from django.db.models import Q
 from django.utils import timezone
 from rest_framework import serializers
 
-from bookings.models import ACTIVE_STATUSES
-from bookings.services import bonus_balance
+from bookings.models import ACTIVE_STATUSES, Referral
+from bookings.services import bonus_balance, find_referrer, level_for
 from config.images import RelativeImageField
 from .models import ClientProfile
 
@@ -47,10 +47,29 @@ class RegisterSerializer(serializers.ModelSerializer):
     email = serializers.EmailField()  # обязательный (у модели User он необязательный)
     password = serializers.CharField(write_only=True, validators=[validate_password])
     password2 = serializers.CharField(write_only=True)
+    phone = serializers.CharField(write_only=True, required=False, allow_blank=True, max_length=20)
+    referral_code = serializers.CharField(write_only=True, required=False, allow_blank=True, max_length=30)
 
     class Meta:
         model = User
-        fields = ("username", "email", "password", "password2")
+        fields = ("username", "email", "phone", "password", "password2", "referral_code")
+
+    def validate_phone(self, value):
+        if not value.strip():
+            return ""
+        phone = normalize_phone(value.strip())
+        if not phone:
+            raise serializers.ValidationError("Введите номер в формате +7 900 123-45-67.")
+        return phone
+
+    def validate_referral_code(self, value):
+        """Код друга (ALLURE-12) → пригласивший пользователь."""
+        if not value.strip():
+            return None
+        referrer = find_referrer(value)
+        if not referrer:
+            raise serializers.ValidationError("Неверный код приглашения.")
+        return referrer
 
     def validate_email(self, value):
         value = value.strip().lower()
@@ -65,11 +84,16 @@ class RegisterSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         validated_data.pop("password2")
+        phone, referrer = validated_data.get("phone"), validated_data.get("referral_code")
         user = User.objects.create_user(
             username=validated_data["username"],
             email=validated_data.get("email", ""),
             password=validated_data["password"],
         )
+        if phone:
+            ClientProfile.objects.update_or_create(client=user, defaults={"phone": phone})
+        if referrer:
+            Referral.objects.create(referrer=referrer, friend=user)
         return user
 
 class AdminUserSerializer(serializers.ModelSerializer):
@@ -90,13 +114,18 @@ class AdminUserSerializer(serializers.ModelSerializer):
     total_spent = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
     bonus_balance = serializers.IntegerField(read_only=True)
     is_candidate = serializers.SerializerMethodField()
+    loyalty_level = serializers.SerializerMethodField()
 
     class Meta:
         model = User
         fields = ("id", "username", "first_name", "last_name", "email", "phone", "avatar", "is_staff",
                   "date_joined", "note", "is_regular", "is_candidate", "is_blocked", "blocked_reason",
-                  "blocked_at", "master", "visits", "last_visit", "total_spent", "bonus_balance")
+                  "blocked_at", "master", "visits", "last_visit", "total_spent", "bonus_balance", "loyalty_level")
         read_only_fields = ("username", "date_joined")
+
+    def get_loyalty_level(self, user):
+        """Бронза / Серебро / Золото по сумме выполненных визитов."""
+        return level_for(getattr(user, "total_spent", None))["name"]
 
     def get_is_candidate(self, user):
         """Подсказка ⭐: часто ходит, но ещё не отмечен постоянным."""

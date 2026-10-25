@@ -31,6 +31,13 @@ class ServiceViewSet(PublicReadAdminWrite, viewsets.ModelViewSet):
     serializer_class = ServiceSerializer
 
     def get_queryset(self):
+        qs = self._base_queryset()
+        ordering = self.request.query_params.get("ordering")  # ?ordering=price (дешевле) или -price (дороже)
+        if ordering in ("price", "-price"):
+            qs = qs.order_by(ordering, "name")
+        return qs
+
+    def _base_queryset(self):
         if not self.request.user.is_staff:
             return Service.objects.filter(is_active=True)
         deleted = self.request.query_params.get("deleted") == "1" or self.action == "restore"

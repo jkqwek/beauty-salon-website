@@ -2,6 +2,8 @@ from django.shortcuts import render
 # bookings/views.py
 from datetime import datetime, timedelta
 from decimal import Decimal
+import csv
+from django.http import HttpResponse
 
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
@@ -501,6 +503,30 @@ class AdminReviewViewSet(mixins.ListModelMixin, mixins.UpdateModelMixin, viewset
         photo.image.delete(save=False)
         photo.delete()
         return Response(self.get_serializer(self.get_object()).data)
+
+    @action(detail=False, methods=["get"], url_path="export")
+    def export_csv(self, request):
+        response = HttpResponse(content_type='text/csv')
+        response['Content-Disposition'] = 'attachment; filename="reviews_export.csv"'
+        response.write('\ufeff'.encode('utf-8')) # BOM для Excel
+
+        writer = csv.writer(response, delimiter=';')
+        writer.writerow(['ID', 'Дата', 'Клиент', 'Мастер', 'Услуга', 'Оценка', 'Статус', 'Текст отзыва', 'Ответ салона'])
+
+        for review in self.get_queryset():
+            booking = review.booking
+            writer.writerow([
+                review.id,
+                review.created_at.strftime("%Y-%m-%d %H:%M"),
+                booking.client.get_full_name() or booking.client.username,
+                booking.employee.full_name,
+                booking.service.name,
+                booking.rating or '',
+                review.get_status_display(),
+                review.text.replace('\n', ' '),
+                review.reply.replace('\n', ' ') if review.reply else ''
+            ])
+        return response
 
 
 class SalonClosureViewSet(viewsets.ModelViewSet):

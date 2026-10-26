@@ -39,6 +39,7 @@ interface Props {
   defaultFilter?: number | null // индекс фильтра, включённого при открытии
   // false — не сохранять; может спросить сервер (например, какие записи попадут на праздник)
   beforeSubmit?: (values: Record<string, Value>, row: Row | "new") => boolean | Promise<boolean>
+  onExport?: (rows: Row[]) => void // <--- ДОБАВЛЕНО: кастомная функция скачивания
 }
 
 export const INPUT =
@@ -117,6 +118,7 @@ export function CrudTable({
   filters = [],
   defaultFilter = null,
   beforeSubmit,
+  onExport, // <--- ДОБАВЛЕНО
 }: Props) {
   const { data, loading, error, reload } = useApi(() => api<Row[]>(endpoint + listQuery), [endpoint, listQuery])
   const [query, setQuery] = useState("")
@@ -287,7 +289,9 @@ export function CrudTable({
             />
           </label>
           {exportButton(
-            () => downloadCsv(`${title}.csv`, [fields.map((f) => f.label), ...rows.map((row) => fields.map((f) => text(f, row)))]),
+            () => onExport 
+              ? onExport(rows) 
+              : downloadCsv(`${title}.csv`, [fields.map((f) => f.label), ...rows.map((row) => fields.map((f) => text(f, row)))]),
             rows.length === 0,
           )}
           {canCreate && (

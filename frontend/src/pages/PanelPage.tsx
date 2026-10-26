@@ -12,6 +12,7 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
+  Download,
   Gift,
   LayoutGrid,
   MessageSquareText,
@@ -37,7 +38,8 @@ import {
   type ReviewPhoto,
   type SalonLoad,
 } from "@/api/api"
-import { toApiError, type ApiError } from "@/api/client"
+// ДОБАВЛЕН ИМПОРТ tokens
+import { toApiError, tokens, type ApiError } from "@/api/client"
 import { useApi } from "@/api/useApi"
 import {
   formatDate,
@@ -845,6 +847,37 @@ function ReviewPhotosCell({ row, act }: { row: Row; act: RowActions }) {
 }
 
 function ReviewsSection() {
+  const handleExport = async () => {
+    try {
+      const token = tokens.access;
+      
+      const response = await fetch('/api/admin/reviews/export/', {
+        method: 'GET',
+        headers: {
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+        },
+      });
+      
+      if (!response.ok) {
+        console.error(`Ошибка сервера: ${response.status} ${response.statusText}`);
+        throw new Error('Ошибка при скачивании');
+      }
+      
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Отзывы_${new Date().toISOString().split('T')[0]}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error("Детали ошибки экспорта:", error);
+      alert("Не удалось скачать файл.");
+    }
+  };
+
   return (
     <CrudTable
       title="Отзывы"
@@ -852,6 +885,7 @@ function ReviewsSection() {
       canCreate={false}
       canDelete={false}
       defaultFilter={0}
+      onExport={handleExport}
       filters={[
         { label: "Новые", test: (r) => r.status === "new" },
         { label: "Опубликованные", test: (r) => r.status === "published" },

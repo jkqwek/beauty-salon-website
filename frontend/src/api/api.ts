@@ -416,3 +416,8 @@ export interface Promotion {
 export const promotionsApi = {
   current: () => api<Promotion[]>("/promotions/"),
 }
+
+export const supportApi = {
+  sendBugReport: (data: { text: string; contact?: string }) =>
+    api<{ id: number }>("/support/", { method: "POST", body: data, auth: false }),
+}

@@ -20,6 +20,7 @@ import { ReviewsPage } from "./pages/ReviewsPage"
 import { BackToTopButton } from "./components/BackToTopButton"
 import { Avatar } from "./components/Avatar"
 import { formatTime, hoursUntil, relativeDay } from "./lib/format"
+import { BugReportModal } from "./components/BugReportModal"
 
 function Layout() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
@@ -29,6 +30,7 @@ function Layout() {
   const [resumeBooking, setResumeBooking] = useState(false)
   const [bookingPrefill, setBookingPrefill] = useState<BookingPrefill | null>(null)
   const [logoutOpen, setLogoutOpen] = useState(false)
+  const [bugReportOpen, setBugReportOpen] = useState(false)
 
   // запись в ближайшие 24 часа — золотая точка на аватаре и в мобильном меню
   const next = user?.next_booking
@@ -282,22 +284,39 @@ function Layout() {
 
       {/* Footer */}
       <footer className="bg-rose-50 border-t border-rose-100 py-12 px-6">
-        <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-6">
-          <div className="text-xl font-serif text-gold flex items-center gap-2">
-            <Sparkles className="size-5" />
-            Allure
+        {/* Используем grid для идеального выравнивания: 1fr (лого) - 1fr (текст) - 1fr (ссылки) */}
+        <div className="max-w-7xl mx-auto flex flex-col md:grid md:grid-cols-3 items-center gap-6 md:gap-0">
+          
+          {/* Логотип (слева) */}
+          <div className="flex justify-center md:justify-self-start">
+            <div className="text-xl font-serif text-gold flex items-center gap-2">
+              <Sparkles className="size-5" />
+              Allure
+            </div>
           </div>
-          <p className="text-muted-foreground text-sm text-center md:text-left">
+
+          {/* Копирайт (строго по центру) */}
+          <p className="text-muted-foreground text-sm text-center md:justify-self-center">
             {t("© 2026 Allure Beauty Salon. Все права защищены.")}
           </p>
-          <div className="flex gap-4">
+
+          {/* Ссылки (справа) */}
+          <div className="flex justify-center md:justify-self-end gap-4 items-center">
             <span className="text-sm text-muted-foreground hover:text-gold cursor-pointer transition-colors">
               {t("ВКонтакте")}
             </span>
             <span className="text-sm text-muted-foreground hover:text-gold cursor-pointer transition-colors">
               Telegram
             </span>
+            
+            <button 
+              onClick={() => setBugReportOpen(true)} 
+              className="text-sm text-muted-foreground hover:text-rose-500 transition-colors border-l border-rose-200 pl-4 ml-2"
+            >
+              {t("Сообщить об ошибке")}
+            </button>
           </div>
+          
         </div>
       </footer>
 
@@ -346,6 +365,10 @@ function Layout() {
           }}
         />
       )}
+
+      {/* Bug Report Modal */}
+      {bugReportOpen && <BugReportModal onClose={() => setBugReportOpen(false)} />}
+      
     </div>
   )
 }

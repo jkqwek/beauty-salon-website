@@ -2,6 +2,7 @@ import { t } from "@/lib/i18n"
 import { NavLink, useOutletContext } from "react-router"
 import { catalogApi } from "@/api/api"
 import { useApi } from "@/api/useApi"
+import { useHighlight } from "@/lib/highlight"
 import { masterPhoto } from "@/lib/photos"
 import { ErrorMessage } from "../components/ErrorMessage"
 import { Avatar } from "../components/Avatar"
@@ -22,6 +23,7 @@ export function MastersPage() {
     reviews: e.reviews_count ?? 0,
     quote: undefined as string | undefined, // в БД пока нет
   }))
+  const { active } = useHighlight("master", (id) => MASTERS.some((m) => m.id === id)) // переход из поиска
 
   return (
     <div className="flex-1 bg-pearl pb-24">
@@ -47,7 +49,10 @@ export function MastersPage() {
           {MASTERS.map((master) => (
             <div
               key={master.id}
-              className="flex flex-col items-center bg-white rounded-3xl p-8 border border-rose-100 shadow-sm hover:shadow-xl hover:border-gold/30 transition-all duration-300 group"
+              id={`master-${master.id}`}
+              className={`flex flex-col items-center bg-white rounded-3xl p-8 border border-rose-100 shadow-sm hover:shadow-xl hover:border-gold/30 transition-all duration-300 group${
+                active === master.id ? " ring-2 ring-gold ring-offset-4 ring-offset-pearl" : ""
+              }`}
             >
               <div className="size-48 rounded-full p-2 border border-gold mb-6 relative">
                 {master.rating && (

@@ -32,6 +32,8 @@ import {
   adminApi,
   bookingApi,
   catalogApi,
+  SERVICE_TAGS,
+  type AdminBooking,
   type Booking,
   type Employee,
   type PanelCounters,
@@ -46,6 +48,7 @@ import {
   formatDayHeader,
   formatPrice,
   formatTime,
+  maskPhone,
   periodLabel,
   periodRange,
   plural,
@@ -58,12 +61,14 @@ import { masterPhoto } from "@/lib/photos"
 import { Avatar } from "../components/Avatar"
 import { AvatarCropper } from "../components/AvatarCropper"
 import { CrudTable, INPUT, downloadCsv, exportButton, type Option, type Row, type RowActions, type Value } from "../components/CrudTable"
+import { ConfirmDialog } from "../components/ConfirmDialog"
 import { ErrorMessage } from "../components/ErrorMessage"
 import { ModalShell } from "../components/ClientModals"
 import { PhotoLightbox } from "../components/ReviewCard"
 import { BOOKING_STATUS, COUNTERS_CHANGED } from "../components/StatusBadge"
 import { PriceTag } from "../components/PriceTag"
 import { StarRating } from "../components/StarRating"
+import { TagChips } from "../components/TagChips"
 import { EmployeePage } from "./EmployeePage"
 import { DashboardPage } from "./DashboardPage"
 import { FinancePage } from "./FinancePage"
@@ -153,6 +158,7 @@ function BookingsSection() {
   const { data, error, reload } = useApi(() => adminApi.bookings(...range), [range[0], range[1]])
   const employees = useApi(catalogApi.employees)
   const [actionError, setActionError] = useState<ApiError | null>(null)
+  const [cancelling, setCancelling] = useState<AdminBooking | null>(null)
 
   const setStatus = async (id: number, status: Booking["status"]) => {
     setActionError(null)
@@ -292,7 +298,7 @@ function BookingsSection() {
                       <td className="p-4 whitespace-nowrap">{b.price ? formatPrice(b.price) : "—"}</td>
                       <td className="p-4">
                         <div className="flex flex-wrap items-center gap-2">
-                          <StatusSelect status={b.status} onChange={(s) => setStatus(b.id, s)} />
+                          <StatusSelect status={b.status} onChange={(s) => (s === "cancelled" ? setCancelling(b) : setStatus(b.id, s))} />
                           {b.status === "pending" && (
                             <button
                               onClick={() => setStatus(b.id, "confirmed")}
@@ -309,6 +315,28 @@ function BookingsSection() {
             ))}
           </table>
         </div>
+      )}
+
+      {cancelling && (
+        <ConfirmDialog
+          title="Отменить запись?"
+          confirmLabel="Отменить запись"
+          cancelLabel="Не отменять"
+          danger
+          onConfirm={async () => {
+            await setStatus(cancelling.id, "cancelled")
+            setCancelling(null)
+          }}
+          onClose={() => setCancelling(null)}
+        >
+          <p className="font-medium text-foreground">{cancelling.client_name}</p>
+          <p>
+            {cancelling.service_name} · {cancelling.employee_name}
+            <br />
+            {formatDate(cancelling.date)}, {formatTime(cancelling.start_time)}
+          </p>
+          <p className="text-sm mt-3">Время мастера освободится для других клиентов.</p>
+        </ConfirmDialog>
       )}
     </div>
   )
@@ -589,7 +617,7 @@ function ClientsSection() {
           ),
         },
         { name: "last_name", label: "Фамилия", inTable: false },
-        { name: "phone", label: "Телефон", render: (r) => <span className="whitespace-nowrap">{r.phone || "—"}</span> },
+        { name: "phone", label: "Телефон", type: "tel", render: (r) => <span className="whitespace-nowrap">{maskPhone(r.phone ?? "") || "—"}</span> },
         { name: "email", label: "Email", inTable: false },
         {
           name: "is_staff",
@@ -771,6 +799,13 @@ function ServicesSection() {
               render: (r) => <PriceTag base={r.price} price={r.price_today} discount={r.discount_percent} className="whitespace-nowrap" />,
             },
             { name: "duration_minutes", label: "Минут", type: "number" },
+            {
+              name: "tags",
+              label: "Теги",
+              type: "multiselect",
+              options: Object.entries(SERVICE_TAGS).map(([value, label]) => ({ value, label })),
+              render: (r) => (r.tags.length ? <TagChips tags={r.tags} /> : "—"),
+            },
             { name: "description", label: "Описание", type: "textarea", inTable: false },
             { name: "is_active", label: "Активна (снять — временно скрыть)", type: "checkbox", default: true },
           ]}
@@ -1095,7 +1130,7 @@ function MastersSection() {
         { name: "photo", label: "Фото", inForm: false, render: (r, act) => <MasterPhotoCell row={r} act={act} /> },
         { name: "full_name", label: "ФИО" },
         { name: "specialization", label: "Специализация" },
-        { name: "phone", label: "Телефон" },
+        { name: "phone", label: "Телефон", type: "tel", render: (r) => <span className="whitespace-nowrap">{maskPhone(r.phone ?? "") || "—"}</span> },
         { name: "services", label: "Услуги", type: "multiselect", options: services.data.map((s) => ({ value: s.id, label: s.name })) },
         { name: "user", label: "Аккаунт сотрудника (для «Моего кабинета»)", type: "select", options: accounts },
         { name: "is_active", label: "Работает", type: "checkbox", default: true },

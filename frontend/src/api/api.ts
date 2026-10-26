@@ -60,7 +60,22 @@ export interface Service {
   promotion: string | null
   deleted_at?: string | null
   future_bookings?: number | null
+  tags: ServiceTag[]
 }
+
+/** Теги услуг — тот же фиксированный список, что SERVICE_TAGS в backend/catalog/models.py.
+ *  Названия показываются через t(): английские — в lib/en.ts */
+export const SERVICE_TAGS = {
+  hit: "Хит",
+  new: "Новинка",
+  express: "Экспресс",
+  relax: "Расслабление",
+  care: "Уход",
+  men: "Для мужчин",
+  women: "Для женщин",
+} as const
+
+export type ServiceTag = keyof typeof SERVICE_TAGS
 
 export interface Employee {
   id: number
@@ -131,7 +146,7 @@ export const authApi = {
       auth: false,
     }),
   me: () => api<User>("/auth/me/"),
-  updateMe: (data: ProfileData) => api<User>("/auth/me/", { method: "PATCH", body: data }),
+  updateMe: (data: Partial<ProfileData>) => api<User>("/auth/me/", { method: "PATCH", body: data }),
   uploadAvatar: (blob: Blob) => api<User>("/auth/me/avatar/", { method: "PUT", body: fileForm("avatar", blob) }),
   deleteAvatar: () => api<User>("/auth/me/avatar/", { method: "DELETE" }),
   bonus: () => api<BonusSummary>("/auth/me/bonus/"),

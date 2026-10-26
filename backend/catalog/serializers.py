@@ -2,7 +2,7 @@ from django.utils import timezone
 from rest_framework import serializers
 
 from config.images import RelativeImageField
-from .models import Employee, Promotion, Service, price_on
+from .models import SERVICE_TAGS, Employee, Promotion, Service, price_on
 
 
 class ServiceSerializer(serializers.ModelSerializer):
@@ -26,6 +26,9 @@ class ServiceSerializer(serializers.ModelSerializer):
             promotion=promo.name if promo else None,
         )
         return data
+
+    def validate_tags(self, value):
+        return [tag for tag in SERVICE_TAGS if tag in value]  # без повторов и всегда в одном порядке
 
     def validate_price(self, value):
         if value <= 0:

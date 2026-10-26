@@ -3,6 +3,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from django.db import models
 from django.db.models import Q
 from django.contrib.auth import get_user_model
+from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator, MaxValueValidator
 
 User = get_user_model()
@@ -16,6 +17,24 @@ class ServiceManager(models.Manager):
         return super().get_queryset().filter(deleted_at__isnull=True)
 
 
+# Теги услуг — фиксированный список: сотрудник только отмечает подходящие.
+# Новый тег: строка здесь, такая же во frontend/src/api/api.ts (SERVICE_TAGS) и перевод в frontend/src/lib/en.ts
+SERVICE_TAGS = {
+    "hit": "Хит",
+    "new": "Новинка",
+    "express": "Экспресс",
+    "relax": "Расслабление",
+    "care": "Уход",
+    "men": "Для мужчин",
+    "women": "Для женщин",
+}
+
+
+def validate_tags(value):
+    if not isinstance(value, list) or any(tag not in SERVICE_TAGS for tag in value):
+        raise ValidationError(f"Теги выбираются из списка: {', '.join(SERVICE_TAGS)}.")
+
+
 class Service(models.Model):
     name = models.CharField("Название", max_length=100)
     description = models.TextField("Описание", blank=True)
@@ -23,6 +42,7 @@ class Service(models.Model):
     duration_minutes = models.PositiveIntegerField("Длительность (мин)")
     category = models.CharField("Категория", max_length=50, blank=True)
     image = models.ImageField("Изображение", upload_to="services/", blank=True, null=True)  # <-- новое поле
+    tags = models.JSONField("Теги", default=list, blank=True, validators=[validate_tags])  # ключи из SERVICE_TAGS
     is_active = models.BooleanField("Активен", default=True)
     created_at = models.DateTimeField("Дата создания", auto_now_add=True)
     deleted_at = models.DateTimeField("Удалена", null=True, blank=True)

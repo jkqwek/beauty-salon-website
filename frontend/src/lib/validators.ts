@@ -25,8 +25,10 @@ export const validators = {
     const v = value.trim()
     if (!v) return null
     const digits = v.replace(/\D/g, "")
-    const ok = /^\+?[\d\s()-]+$/.test(v) && (digits.length === 10 || (digits.length === 11 && /^[78]/.test(digits)))
-    return ok ? null : t("Введите номер в формате +7 900 123‑45‑67") // неразрывно, чтобы номер не переносился
+    // с кодом страны — только полный номер +7 и 10 цифр; без него — 10 цифр или 11 с 8/7 впереди
+    const full = v.startsWith("+") ? /^7\d{10}$/.test(digits) : digits.length === 10 || (digits.length === 11 && /^[78]/.test(digits))
+    const ok = /^\+?[\d\s()-]+$/.test(v) && full
+    return ok ? null : t("Введите номер полностью: +7 (900) 123‑45‑67") // неразрывно, чтобы номер не переносился
   },
 
   password(value: string): string | null {

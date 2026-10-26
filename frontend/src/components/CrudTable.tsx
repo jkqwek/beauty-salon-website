@@ -2,9 +2,10 @@ import { useState, type FormEvent, type ReactNode } from "react"
 import { Download, Pencil, Plus, Search, Trash, X } from "lucide-react"
 import { api, fieldMessages, toApiError, type ApiError } from "@/api/client"
 import { useApi } from "@/api/useApi"
+import { maskPhone } from "@/lib/format"
 import { ErrorMessage } from "./ErrorMessage"
 
-export type Value = string | number | boolean | null | number[]
+export type Value = string | number | boolean | null | (string | number)[]
 export type Row = { id: number; [key: string]: any }
 export type Option = { value: Value; label: string }
 /** Действия из ячейки: поменять поле строки (⭐ в один клик), выполнить свой запрос или перечитать таблицу */
@@ -17,7 +18,7 @@ export type RowActions = {
 export interface Field {
   name: string
   label: string
-  type?: "text" | "number" | "date" | "time" | "textarea" | "checkbox" | "select" | "multiselect"
+  type?: "text" | "tel" | "number" | "date" | "time" | "textarea" | "checkbox" | "select" | "multiselect"
   options?: Option[]
   default?: Value
   render?: (row: Row, act: RowActions) => ReactNode // своя ячейка таблицы
@@ -75,7 +76,7 @@ const labelOf = (f: Field, v: unknown) => f.options?.find((o) => o.value === v)?
 function text(f: Field, row: Row): string {
   const v = row[f.name]
   if (f.type === "select") return labelOf(f, v)
-  if (f.type === "multiselect") return (v as number[]).map((id) => labelOf(f, id)).join(", ")
+  if (f.type === "multiselect") return (v as (string | number)[]).map((id) => labelOf(f, id)).join(", ")
   if (f.type === "checkbox") return v ? "Да" : "Нет"
   if (f.type === "time" && v) return String(v).slice(0, 5)
   if (Array.isArray(v)) return String(v.length) // например, фото к отзыву — сколько их
@@ -246,7 +247,7 @@ export function CrudTable({
           </select>
         )
       case "multiselect": {
-        const selected = (v as number[]) ?? []
+        const selected = (v as (string | number)[]) ?? []
         return (
           <div className="grid grid-cols-2 gap-2">
             {f.options!.map((o) => (
@@ -254,9 +255,9 @@ export function CrudTable({
                 <input
                   type="checkbox"
                   className="size-4 accent-gold"
-                  checked={selected.includes(o.value as number)}
+                  checked={selected.includes(o.value as string | number)}
                   onChange={(e) =>
-                    set(e.target.checked ? [...selected, o.value as number] : selected.filter((x) => x !== o.value))
+                    set(e.target.checked ? [...selected, o.value as string | number] : selected.filter((x) => x !== o.value))
                   }
                 />
                 {o.label}
@@ -265,6 +266,8 @@ export function CrudTable({
           </div>
         )
       }
+      case "tel": // маска +7 (900) 123-45-67
+        return <input id={id} type="tel" value={maskPhone(String(v ?? ""))} onChange={(e) => set(maskPhone(e.target.value))} placeholder="+7 (900) 123-45-67" className={INPUT} />
       default:
         return <input id={id} type={f.type ?? "text"} value={String(v ?? "")} onChange={(e) => set(e.target.value)} className={INPUT} />
     }

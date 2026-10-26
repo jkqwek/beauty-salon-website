@@ -29,7 +29,7 @@ const primaryBtn =
   "w-full bg-gold hover:bg-gold-hover text-white py-3 rounded-full font-medium transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
 
 /** Перенос своей записи: те же мастер и услуга, новая дата и время. Цена — по новой дате */
-export function RescheduleModal({ booking, onClose, onDone }: { booking: Booking; onClose: () => void; onDone: () => void }) {
+export function RescheduleModal({ booking, onClose, onDone }: { booking: Booking; onClose: () => void; onDone: (updated: Booking) => void }) {
   const [date, setDate] = useState<string | null>(null)
   const [time, setTime] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
@@ -42,8 +42,7 @@ export function RescheduleModal({ booking, onClose, onDone }: { booking: Booking
     setSaving(true)
     setError(null)
     try {
-      await bookingApi.reschedule(booking.id, date, time)
-      onDone()
+      onDone(await bookingApi.reschedule(booking.id, date, time))
     } catch (e) {
       setError(toApiError(e))
       setSaving(false)

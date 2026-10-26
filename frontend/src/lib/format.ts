@@ -26,6 +26,22 @@ export const formatDayMonth = (iso: string) =>
 export const formatDayHeader = (iso: string) =>
   parseDate(iso).toLocaleDateString(locale(), { weekday: "long", day: "numeric", month: "long" })
 
+/** Маска телефона при вводе: "89001234567", "+7 900…", "900…" -> "+7 (900) 123-45-67".
+ *  Разделители добавляются только перед следующей цифрой, поэтому Backspace не застревает на ")" и "-".
+ *  ponytail: курсор после правки в середине номера прыгает в конец — для короткого номера терпимо */
+export function maskPhone(value: string): string {
+  let d = value.replace(/\D/g, "")
+  if (value.startsWith("+7")) d = d.slice(1) // уже в нашем формате
+  else if (/^[78]/.test(d)) d = d.slice(1) // начали с 8 или 7
+  d = d.slice(0, 10)
+  if (!d) return ""
+  let out = `+7 (${d.slice(0, 3)}`
+  if (d.length > 3) out += `) ${d.slice(3, 6)}`
+  if (d.length > 6) out += `-${d.slice(6, 8)}`
+  if (d.length > 8) out += `-${d.slice(8, 10)}`
+  return out
+}
+
 /** "10:00:00" -> "10:00" */
 export const formatTime = (time: string) => time.slice(0, 5)
 

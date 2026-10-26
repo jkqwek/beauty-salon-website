@@ -4,14 +4,17 @@ import { useAuth } from "@/auth/AuthContext"
 import { authApi, bookingApi, catalogApi, type Booking, type ProfileData, type User as UserType } from "@/api/api"
 import { useApi } from "@/api/useApi"
 import { fieldMessages, toApiError, type ApiError } from "@/api/client"
-import { formatDate, formatPrice, formatTime, hoursUntil, plural, relativeDay } from "@/lib/format"
+import { formatDate, formatDayMonth, formatPrice, formatTime, hoursUntil, maskPhone, plural, relativeDay } from "@/lib/format"
+import { t } from "@/lib/i18n"
 import { collectErrors, validators } from "@/lib/validators"
 import { Avatar } from "../components/Avatar"
 import { AvatarCropper } from "../components/AvatarCropper"
 import type { BookingPrefill } from "../components/BookingWizard"
+import { ConfirmDialog } from "../components/ConfirmDialog"
 import { ErrorMessage } from "../components/ErrorMessage"
 import { StatusBadge, isActiveStatus } from "../components/StatusBadge"
 import { RescheduleModal, ReviewModal } from "../components/ClientModals"
+import { toast } from "../components/Toast"
 import { Bell, Calendar, Camera, Clock, Gift, RotateCcw, User, type LucideIcon } from "lucide-react"
 
 const REVIEW_BADGE: Record<NonNullable<Booking["review_status"]>, { label: string; cls: string }> = {
@@ -44,6 +47,7 @@ export function ProfilePage() {
   const [cancelError, setCancelError] = useState<ApiError | null>(null)
   const [rescheduling, setRescheduling] = useState<Booking | null>(null)
   const [reviewing, setReviewing] = useState<Booking | null>(null)
+  const [cancelling, setCancelling] = useState<Booking | null>(null)
 
   if (!user) {
     return (
@@ -74,14 +78,16 @@ export function ProfilePage() {
     refreshUser() // напоминание в шапке
   }
 
-  const cancel = async (id: number) => {
-    if (!confirm("Отменить запись?")) return
+  const cancel = async (b: Booking) => {
     setCancelError(null)
     try {
-      await bookingApi.cancel(id)
+      await bookingApi.cancel(b.id)
+      toast(t("Запись отменена: {service}, {day} в {time}", { service: t(b.service_name), day: formatDayMonth(b.date), time: formatTime(b.start_time) }))
       changed()
     } catch (e) {
       setCancelError(toApiError(e)) // например, поздно по правилу отмены
+    } finally {
+      setCancelling(null)
     }
   }
 
@@ -196,7 +202,7 @@ export function ProfilePage() {
                         </button>
 
                         <button
-                          onClick={() => cancel(b.id)}
+                          onClick={() => setCancelling(b)}
                           className="px-6 py-2 rounded-full bg-rose-50 border border-rose-200 text-rose-600 font-medium hover:bg-rose-100 transition-colors"
                         >
                           Отменить
@@ -309,8 +315,9 @@ export function ProfilePage() {
         <RescheduleModal
           booking={rescheduling}
           onClose={() => setRescheduling(null)}
-          onDone={() => {
+          onDone={(updated) => {
             setRescheduling(null)
+            toast(t("Запись перенесена на {day} в {time}. Она снова ждёт подтверждения салона.", { day: formatDayMonth(updated.date), time: formatTime(updated.start_time) }))
             changed()
           }}
         />
@@ -321,9 +328,28 @@ export function ProfilePage() {
           onClose={() => setReviewing(null)}
           onDone={() => {
             setReviewing(null)
+            toast(t("Спасибо за отзыв! Он появится на сайте после проверки."))
             bookings.reload()
           }}
         />
+      )}
+      {cancelling && (
+        <ConfirmDialog
+          title={t("Отменить запись?")}
+          confirmLabel={t("Отменить запись")}
+          cancelLabel={t("Не отменять")}
+          danger
+          onConfirm={() => cancel(cancelling)}
+          onClose={() => setCancelling(null)}
+        >
+          <p className="font-medium text-foreground">{t(cancelling.service_name)}</p>
+          <p>
+            {formatDate(cancelling.date)}, {formatTime(cancelling.start_time)} · {t("мастер")} {t(cancelling.employee_name)}
+          </p>
+          {!!policy.data?.deadline_hours && (
+            <p className="text-sm mt-3">{t("Отменить запись можно не позднее чем за {hours} ч до визита.", { hours: policy.data.deadline_hours })}</p>
+          )}
+        </ConfirmDialog>
       )}
     </div>
   )
@@ -428,19 +454,17 @@ function ProfileForm({ user }: { user: UserType }) {
     first_name: u.first_name,
     last_name: u.last_name,
     email: u.email,
-    phone: u.phone ?? "",
+    phone: maskPhone(u.phone ?? ""),
   })
   const [values, setValues] = useState<ProfileData>(() => fromUser(user))
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [formError, setFormError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
-  const [saved, setSaved] = useState(false)
   const [photoOpen, setPhotoOpen] = useState(false)
   const name = [user.first_name, user.last_name].filter(Boolean).join(" ") || user.username
 
   const set = (field: keyof ProfileData) => (e: React.ChangeEvent<HTMLInputElement>) => {
-    setValues({ ...values, [field]: e.target.value })
-    setSaved(false)
+    setValues({ ...values, [field]: field === "phone" ? maskPhone(e.target.value) : e.target.value })
     if (errors[field]) setErrors({ ...errors, [field]: "" })
   }
 
@@ -454,7 +478,7 @@ function ProfileForm({ user }: { user: UserType }) {
       const updated = await authApi.updateMe({ ...values, email: values.email.trim() })
       updateUser(updated)
       setValues(fromUser(updated))
-      setSaved(true)
+      toast(t("Профиль сохранён"))
     } catch (err) {
       const apiError = toApiError(err)
       const fields = fieldMessages(apiError)
@@ -510,7 +534,7 @@ function ProfileForm({ user }: { user: UserType }) {
           {field("first_name", "Имя", "text", "given-name")}
           {field("last_name", "Фамилия", "text", "family-name")}
           {field("email", "Email", "email", "email")}
-          {field("phone", "Телефон", "tel", "tel", "+7 900 123-45-67")}
+          {field("phone", "Телефон", "tel", "tel", "+7 (900) 123-45-67")}
         </div>
         <div className="pt-4 flex items-center gap-4">
           <button
@@ -520,7 +544,6 @@ function ProfileForm({ user }: { user: UserType }) {
           >
             {saving ? "Сохранение…" : "Сохранить изменения"}
           </button>
-          {saved && <span className="text-sm text-green-700">Сохранено</span>}
         </div>
       </form>
 

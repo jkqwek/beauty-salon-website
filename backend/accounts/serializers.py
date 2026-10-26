@@ -22,6 +22,8 @@ def normalize_phone(value):
     if not re.fullmatch(r"\+?[\d\s()-]+", value):
         return None
     digits = re.sub(r"\D", "", value)
+    if value.startswith("+"):  # с кодом страны — только полный номер +7 и 10 цифр
+        return f"+{digits}" if len(digits) == 11 and digits[0] == "7" else None
     if len(digits) == 11 and digits[0] in "78":
         digits = digits[1:]
     return f"+7{digits}" if len(digits) == 10 else None

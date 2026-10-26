@@ -5,12 +5,13 @@ import {
   Outlet,
   NavLink,
 } from "react-router"
-import { Sparkles, Calendar, Menu, X, LogOut, Globe } from "lucide-react"
+import { Sparkles, Calendar, Menu, X, LogOut, Globe, Search } from "lucide-react"
 import { useState } from "react"
 import { HomePage } from "./pages/HomePage"
 import { MastersPage } from "./pages/MastersPage"
 import { ServicesPage } from "./pages/ServicesPage"
 import { ProfilePage } from "./pages/ProfilePage"
+import { ComparePage } from "./pages/ComparePage"
 import { BookingWizard, type BookingPrefill } from "./components/BookingWizard"
 import { AuthModal } from "./components/AuthModal"
 import { RouteError } from "./components/RouteError"
@@ -19,7 +20,11 @@ import { PanelLayout, panelRoutes } from "./pages/PanelPage"
 import { ReviewsPage } from "./pages/ReviewsPage"
 import { BackToTopButton } from "./components/BackToTopButton"
 import { Avatar } from "./components/Avatar"
-import { formatTime, hoursUntil, relativeDay } from "./lib/format"
+import { CompareBar } from "./components/CompareBar"
+import { ConfirmDialog } from "./components/ConfirmDialog"
+import { SiteSearch } from "./components/SiteSearch"
+import { Toaster, toast } from "./components/Toast"
+import { formatDayMonth, formatTime, hoursUntil, relativeDay } from "./lib/format"
 import { BugReportModal } from "./components/BugReportModal"
 
 function Layout() {
@@ -31,6 +36,7 @@ function Layout() {
   const [bookingPrefill, setBookingPrefill] = useState<BookingPrefill | null>(null)
   const [logoutOpen, setLogoutOpen] = useState(false)
   const [bugReportOpen, setBugReportOpen] = useState(false)
+  const [searchOpen, setSearchOpen] = useState(false)
 
   // запись в ближайшие 24 часа — золотая точка на аватаре и в мобильном меню
   const next = user?.next_booking
@@ -136,6 +142,14 @@ function Layout() {
 
           {/* Действия — прижаты вправо */}
           <div className="hidden lg:flex items-center gap-3 xl:gap-4 justify-self-end">
+            <button
+              onClick={() => setSearchOpen(true)}
+              title={t("Поиск по услугам и мастерам")}
+              aria-label={t("Поиск")}
+              className="p-2 text-muted-foreground hover:text-gold transition-colors"
+            >
+              <Search className="size-5" />
+            </button>
             <LangSwitch />
             {user ? (
               <>
@@ -193,6 +207,15 @@ function Layout() {
         {/* Mobile menu */}
         {mobileMenuOpen && (
           <div className="lg:hidden absolute top-20 left-0 w-full bg-pearl border-b border-rose-100 p-6 flex flex-col gap-4 shadow-lg">
+            <button
+              onClick={() => {
+                setSearchOpen(true)
+                setMobileMenuOpen(false)
+              }}
+              className="text-lg font-medium text-foreground text-left flex items-center gap-2"
+            >
+              <Search className="size-5" /> {t("Поиск")}
+            </button>
             <NavLink
               to="/"
               onClick={() => setMobileMenuOpen(false)}
@@ -336,18 +359,40 @@ function Layout() {
         (user?.is_blocked ? (
           <BlockedNotice onClose={closeBooking} />
         ) : (
-          <BookingWizard prefill={bookingPrefill} onClose={closeBooking} />
+          <BookingWizard
+            prefill={bookingPrefill}
+            onClose={closeBooking}
+            onBooked={(b) => {
+              closeBooking()
+              toast(
+                t("Вы записаны: {service}, {day} в {time}. Запись ждёт подтверждения салона.", {
+                  service: t(b.service_name),
+                  day: formatDayMonth(b.date),
+                  time: formatTime(b.start_time),
+                }),
+                { to: "/profile?tab=bookings", label: t("Мои записи") },
+              )
+            }}
+          />
         ))}
 
       {logoutOpen && (
-        <LogoutConfirm
+        <ConfirmDialog
+          title={t("Выйти из аккаунта?")}
+          confirmLabel={t("Выйти")}
           onClose={() => setLogoutOpen(false)}
           onConfirm={() => {
             setLogoutOpen(false)
             logout()
           }}
-        />
+        >
+          {t("Чтобы записаться или посмотреть свои записи, нужно будет войти снова.")}
+        </ConfirmDialog>
       )}
+
+      {searchOpen && <SiteSearch onClose={() => setSearchOpen(false)} />}
+      <CompareBar />
+      <Toaster />
 
       {/* Auth Modal */}
       {authOpen && (
@@ -384,6 +429,7 @@ const router = createBrowserRouter([
       { path: "masters", Component: MastersPage },
       { path: "reviews", Component: ReviewsPage },
       { path: "profile", Component: ProfilePage },
+      { path: "compare", Component: ComparePage },
       { path: "panel", Component: PanelLayout, children: panelRoutes },
     ],
   },
@@ -434,39 +480,6 @@ function BlockedNotice({ onClose }: { onClose: () => void }) {
         >
           {t("Понятно")}
         </button>
-      </div>
-    </div>
-  )
-}
-
-function LogoutConfirm({ onConfirm, onClose }: { onConfirm: () => void; onClose: () => void }) {
-  return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-      <div
-        role="alertdialog"
-        aria-modal="true"
-        aria-labelledby="logout-title"
-        className="bg-white w-full max-w-sm rounded-[2rem] shadow-2xl p-8 text-center space-y-4"
-      >
-        <h2 id="logout-title" className="text-2xl font-serif text-foreground">
-          {t("Выйти из аккаунта?")}
-        </h2>
-        <p className="text-muted-foreground">{t("Чтобы записаться или посмотреть свои записи, нужно будет войти снова.")}</p>
-        <div className="flex gap-3 justify-center pt-2">
-          <button
-            onClick={onClose}
-            autoFocus
-            className="px-6 py-3 rounded-full border border-rose-200 text-foreground font-medium hover:bg-rose-50 transition-colors"
-          >
-            {t("Отмена")}
-          </button>
-          <button
-            onClick={onConfirm}
-            className="bg-gold hover:bg-gold-hover text-white px-8 py-3 rounded-full font-medium transition-colors"
-          >
-            {t("Выйти")}
-          </button>
-        </div>
       </div>
     </div>
   )

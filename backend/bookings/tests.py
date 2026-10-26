@@ -482,7 +482,7 @@ class ClientCabinetTests(APITestCase):
         for raw in ("8 900 123-45-67", "+7 (900) 123 45 67", "9001234567"):
             r = self.client.patch("/api/auth/me/", {"phone": raw})
             self.assertEqual(r.json()["phone"], "+79001234567", raw)
-        for bad in ("12345", "8 900 abc 45 67", "+1 900 123 45 67 89"):
+        for bad in ("12345", "8 900 abc 45 67", "+1 900 123 45 67 89", "+7 (912) 345-67-8"):
             self.assertEqual(self.client.patch("/api/auth/me/", {"phone": bad}).status_code, 400, bad)
         self.assertEqual(self.client.patch("/api/auth/me/", {"phone": ""}).json()["phone"], "")
 

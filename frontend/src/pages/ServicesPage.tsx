@@ -98,7 +98,7 @@ export function ServicesPage() {
               key={service.id}
               className="flex flex-col md:flex-row bg-white rounded-3xl overflow-hidden border border-rose-100 shadow-sm hover:shadow-md transition-shadow group"
             >
-              <div className="w-full md:w-64 h-48 md:h-auto overflow-hidden">
+              <div className="w-full md:w-48 lg:w-64 h-48 md:h-auto overflow-hidden">
                 <ImageWithFallback
                   src={
                     service.image ??

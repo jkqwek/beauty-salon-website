@@ -12,6 +12,8 @@ import {
 import { ImageWithFallback } from "../components/ImageWithFallback"
 import { LocationSection } from "../components/LocationSection"
 import { FaqSection } from "../components/FaqSection"
+import { Reveal } from "../components/Reveal"
+import { WorksSlider, type Work } from "../components/WorksSlider"
 import {
   ClosureBanner,
   PromotionsSection,
@@ -78,6 +80,14 @@ function masterPhoto(m: Master): string | undefined {
   return m.photo || m.image || undefined
 }
 
+// Замените картинки на настоящие фото работ из @/imports/works/..., когда они будут
+const WORKS: Work[] = [
+  { image: heroPhoto, title: "Окрашивание в холодный блонд", master: "Елена Ростова" },
+  { image: heroPhoto, title: "Уход за лицом", master: "София Лин" },
+  { image: heroPhoto, title: "Маникюр с дизайном", master: "Злата Кравцова" },
+  { image: heroPhoto, title: "Расслабляющий массаж", master: "Богдан Тарасов" },
+]
+
 const API_BASE = "/api"
 
 export function HomePage() {
@@ -120,7 +130,7 @@ export function HomePage() {
     <div className="flex flex-col flex-1">
       <ClosureBanner />
 
-      {/* Hero Section */}
+      {/* Hero Section (без анимации: первый экран должен быть виден сразу) */}
       <section className="relative min-h-[85vh] flex items-center justify-center overflow-hidden">
         <div className="absolute inset-0 z-0">
           <ImageWithFallback
@@ -133,14 +143,15 @@ export function HomePage() {
         </div>
 
         <div className="relative z-10 max-w-4xl mx-auto px-6 text-center">
+          {/* на тёмной подложке нужен светлый text-gold, а не gold-dark */}
           <span className="inline-block px-4 py-1 mb-6 rounded-full border border-gold/70 text-gold font-medium text-sm tracking-widest uppercase">
             Добро пожаловать в Allure
           </span>
-          <h1 className="text-5xl md:text-7xl font-serif text-white mb-6 leading-tight drop-shadow-sm">
+          <h1 className="text-[clamp(2.5rem,6vw,4.5rem)] font-serif text-white mb-6 leading-[1.1] tracking-tight">
             Перезагрузка <br />
             <span className="text-gold-gradient italic">за один визит.</span>
           </h1>
-          <p className="text-lg md:text-xl text-white/90 max-w-2xl mx-auto mb-10 font-medium">
+          <p className="text-lg md:text-xl text-white/90 max-w-2xl mx-auto mb-10 font-medium leading-relaxed text-pretty">
             Погрузитесь в мир изысканного ухода — в спокойном современном
             пространстве, созданном исключительно для вашего благополучия.
           </p>
@@ -156,29 +167,29 @@ export function HomePage() {
       <PromotionsSection onBook={openBooking} />
 
       {/* Services Preview */}
-      <section className="py-24 bg-pearl relative">
+      <section className="section-y bg-pearl relative">
         <div className="absolute top-0 left-0 w-64 h-64 bg-rose-100 rounded-full blur-3xl opacity-40 -translate-x-1/2 -translate-y-1/2"></div>
         <div className="max-w-7xl mx-auto px-6 relative z-10">
-          <div className="flex flex-col md:flex-row items-end justify-between mb-16 gap-6">
-            <div>
-              <h2 className="text-4xl font-serif text-foreground mb-4">
-                Наши услуги
-              </h2>
-              <p className="text-muted-foreground max-w-xl">
-                Тщательно подобранные процедуры, которые подчеркнут вашу
-                естественную красоту и подарят полное расслабление.
-              </p>
+          <Reveal>
+            <div className="flex flex-col md:flex-row items-end justify-between mb-12 md:mb-16 gap-6">
+              <div>
+                <h2 className="section-title mb-4">Наши услуги</h2>
+                <p className="section-lead">
+                  Тщательно подобранные процедуры, которые подчеркнут вашу
+                  естественную красоту и подарят полное расслабление.
+                </p>
+              </div>
+              <NavLink
+                to="/services"
+                className="text-gold-dark font-medium flex items-center gap-2 hover:gap-3 transition-all hover:text-gold-hover"
+              >
+                Все услуги <ArrowRight className="size-4" />
+              </NavLink>
             </div>
-            <NavLink
-              to="/services"
-              className="text-gold font-medium flex items-center gap-2 hover:gap-3 transition-all hover:text-gold-hover"
-            >
-              Все услуги <ArrowRight className="size-4" />
-            </NavLink>
-          </div>
+          </Reveal>
 
           {loadingServices ? (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-8">
               {Array.from({ length: 4 }).map((_, i) => (
                 <div
                   key={i}
@@ -195,26 +206,26 @@ export function HomePage() {
               Услуги скоро появятся.
             </p>
           ) : (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
-              {services.map((service) => {
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-8">
+              {services.map((service, i) => {
                 const Icon = iconForService(service)
                 return (
-                  <div
-                    key={service.id}
-                    className="group flex flex-col items-center text-center p-8 rounded-3xl bg-white border border-rose-100 shadow-sm hover:shadow-lg hover:border-gold/30 transition-all duration-300 cursor-pointer"
-                  >
-                    <div className="size-16 rounded-full bg-rose-50 text-gold flex items-center justify-center mb-6 group-hover:scale-110 transition-transform duration-300">
-                      <Icon className="size-8 stroke-[1.5]" />
+                  // задержка по кругу в пределах ряда: карточки не ждут по секунде
+                  <Reveal key={service.id} delay={(i % 4) * 80} className="h-full">
+                    <div className="group flex flex-col items-center text-center p-8 rounded-3xl bg-white border border-rose-100 shadow-sm hover:shadow-lg hover:border-gold/30 transition-all duration-300 cursor-pointer h-full">
+                      <div className="size-16 rounded-full bg-rose-50 text-gold-dark flex items-center justify-center mb-6 group-hover:scale-110 transition-transform duration-300">
+                        <Icon className="size-8 stroke-[1.5]" />
+                      </div>
+                      <h3 className="text-xl font-serif text-foreground mb-2">
+                        {service.name}
+                      </h3>
+                      {service.description && (
+                        <p className="text-sm text-muted-foreground">
+                          {service.description}
+                        </p>
+                      )}
                     </div>
-                    <h3 className="text-xl font-serif text-foreground mb-2">
-                      {service.name}
-                    </h3>
-                    {service.description && (
-                      <p className="text-sm text-muted-foreground">
-                        {service.description}
-                      </p>
-                    )}
-                  </div>
+                  </Reveal>
                 )
               })}
             </div>
@@ -223,76 +234,79 @@ export function HomePage() {
       </section>
 
       {/* Meet the Masters */}
-      <section className="py-24 bg-rose-50 border-y border-rose-100 overflow-hidden">
+      <section className="section-y bg-rose-50 border-y border-rose-100 overflow-hidden">
         <div className="max-w-7xl mx-auto px-6">
-          <div className="text-center mb-16">
-            <h2 className="text-4xl font-serif text-foreground mb-4">
-              Наши мастера
-            </h2>
-            <p className="text-muted-foreground max-w-xl mx-auto">
-              Команда титулованных профессионалов, готовых воплотить вашу идею.
-            </p>
-          </div>
+          <Reveal>
+            <div className="text-center mb-12 md:mb-16">
+              <h2 className="section-title mb-4">Наши мастера</h2>
+              <p className="section-lead mx-auto">
+                Команда титулованных профессионалов, готовых воплотить вашу идею.
+              </p>
+            </div>
+          </Reveal>
 
-          {loadingMasters ? (
-            <div className="flex overflow-x-auto pb-10 -mx-6 px-6 gap-8 snap-x hide-scrollbar">
-              {Array.from({ length: 4 }).map((_, i) => (
-                <div
-                  key={i}
-                  className="snap-center shrink-0 w-[280px] flex flex-col items-center"
-                >
-                  <div className="size-48 rounded-full bg-rose-100 mb-6 animate-pulse" />
-                  <div className="h-6 w-40 bg-rose-100 rounded mb-2" />
-                  <div className="h-4 w-32 bg-rose-100 rounded" />
-                </div>
-              ))}
-            </div>
-          ) : masters.length === 0 ? (
-            <p className="text-center text-muted-foreground py-8">
-              Информация о мастерах скоро появится.
-            </p>
-          ) : (
-            <div className="flex overflow-x-auto pb-10 -mx-6 px-6 gap-8 snap-x hide-scrollbar">
-              {masters.map((master) => {
-                const photo = masterPhoto(master)
-                return (
+          {/* карусель оборачиваем целиком: карточки лежат в горизонтальной прокрутке */}
+          <Reveal delay={100}>
+            {loadingMasters ? (
+              <div className="flex overflow-x-auto pb-10 -mx-6 px-6 gap-8 snap-x hide-scrollbar">
+                {Array.from({ length: 4 }).map((_, i) => (
                   <div
-                    key={master.id}
-                    className="snap-center shrink-0 w-[280px] flex flex-col items-center group cursor-pointer"
+                    key={i}
+                    className="snap-center shrink-0 w-[280px] flex flex-col items-center"
                   >
-                    <div className="size-48 rounded-full p-2 border-2 border-transparent group-hover:border-gold transition-colors duration-500 mb-6">
-                      <div className="size-full rounded-full overflow-hidden bg-rose-100 relative">
-                        {photo ? (
-                          <ImageWithFallback
-                            src={photo}
-                            alt={masterName(master)}
-                            className="size-full object-cover grayscale opacity-80 group-hover:grayscale-0 group-hover:opacity-100 transition-all duration-500"
-                          />
-                        ) : (
-                          <div className="size-full flex items-center justify-center text-rose-300">
-                            <UserCircle2 className="size-20 stroke-[1]" />
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                    <h3 className="text-2xl font-serif text-foreground mb-1 group-hover:text-gold transition-colors">
-                      {masterName(master)}
-                    </h3>
-                    {masterRole(master) && (
-                      <p className="text-sm font-medium text-gold/80">
-                        {masterRole(master)}
-                      </p>
-                    )}
+                    <div className="size-48 rounded-full bg-rose-100 mb-6 animate-pulse" />
+                    <div className="h-6 w-40 bg-rose-100 rounded mb-2" />
+                    <div className="h-4 w-32 bg-rose-100 rounded" />
                   </div>
-                )
-              })}
-            </div>
-          )}
+                ))}
+              </div>
+            ) : masters.length === 0 ? (
+              <p className="text-center text-muted-foreground py-8">
+                Информация о мастерах скоро появится.
+              </p>
+            ) : (
+              <div className="flex overflow-x-auto pb-10 -mx-6 px-6 gap-8 snap-x hide-scrollbar">
+                {masters.map((master) => {
+                  const photo = masterPhoto(master)
+                  return (
+                    <div
+                      key={master.id}
+                      className="snap-center shrink-0 w-[280px] flex flex-col items-center group cursor-pointer"
+                    >
+                      <div className="size-48 rounded-full p-3 border-2 border-transparent group-hover:border-gold transition-colors duration-500 mb-6">
+                        <div className="size-full rounded-full overflow-hidden bg-rose-100 relative">
+                          {photo ? (
+                            <ImageWithFallback
+                              src={photo}
+                              alt={masterName(master)}
+                              className="size-full object-cover grayscale opacity-80 group-hover:grayscale-0 group-hover:opacity-100 pointer-coarse:grayscale-0 pointer-coarse:opacity-100 transition-all duration-500"
+                            />
+                          ) : (
+                            <div className="size-full flex items-center justify-center text-rose-300">
+                              <UserCircle2 className="size-20 stroke-[1]" />
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      <h3 className="text-2xl font-serif text-foreground mb-1 group-hover:text-gold-dark transition-colors">
+                        {masterName(master)}
+                      </h3>
+                      {masterRole(master) && (
+                        <p className="text-sm font-medium text-gold-dark">
+                          {masterRole(master)}
+                        </p>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </Reveal>
 
           <div className="text-center mt-4">
             <NavLink
               to="/masters"
-              className="inline-block px-8 py-3 rounded-full border-2 border-gold text-gold font-medium hover:bg-gold hover:text-white transition-colors"
+              className="inline-block px-8 py-3 rounded-full border-2 border-gold text-gold-dark font-medium hover:bg-gold hover:text-white transition-colors"
             >
               Вся команда
             </NavLink>
@@ -300,13 +314,34 @@ export function HomePage() {
         </div>
       </section>
 
+      {/* Работы мастеров */}
+      <section className="section-y bg-pearl">
+        <div className="max-w-7xl mx-auto px-6">
+          <Reveal>
+            <div className="text-center mb-12 md:mb-16">
+              <h2 className="section-title mb-4">Работы наших мастеров</h2>
+              <p className="section-lead mx-auto">
+                Несколько историй, которыми мы гордимся.
+              </p>
+            </div>
+          </Reveal>
+          <Reveal delay={100}>
+            <WorksSlider works={WORKS} />
+          </Reveal>
+        </div>
+      </section>
+
       <ReviewsPreview />
 
       {/* FAQ */}
-      <FaqSection />
+      <Reveal>
+        <FaqSection />
+      </Reveal>
 
       {/* Как добраться */}
-      <LocationSection />
+      <Reveal>
+        <LocationSection />
+      </Reveal>
     </div>
   )
 }

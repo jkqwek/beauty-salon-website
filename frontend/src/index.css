@@ -2,8 +2,8 @@
 @import "tailwindcss";
 
 @theme {
-  --font-sans: "Inter", "sans-serif";
-  --font-serif: "Playfair Display", "serif";
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Playfair Display", ui-serif, Georgia, serif;
 
   --color-rose-50: #fdf8f9;
   --color-rose-100: #faedf0;
@@ -71,4 +71,32 @@ h6,
   background: linear-gradient(135deg, #f3e5ab, #e9cf73); /* светлое золото — для тёмного фона hero */
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
+}
+
+@layer base {
+  body {
+    line-height: 1.6;
+  }
+  h1,
+  h2,
+  h3 {
+    line-height: 1.15;
+    letter-spacing: -0.01em;
+    text-wrap: balance;
+  }
+  p {
+    text-wrap: pretty;
+  }
+}
+
+@layer components {
+  .section-y {
+    @apply py-16 md:py-24;
+  }
+  .section-title {
+    @apply font-serif text-3xl md:text-4xl text-foreground leading-tight tracking-tight text-balance;
+  }
+  .section-lead {
+    @apply text-base md:text-lg text-muted-foreground leading-relaxed max-w-xl text-pretty;
+  }
 }

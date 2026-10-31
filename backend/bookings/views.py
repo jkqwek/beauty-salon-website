@@ -2,8 +2,6 @@ from django.shortcuts import render
 # bookings/views.py
 from datetime import datetime, timedelta
 from decimal import Decimal
-import csv
-from django.http import HttpResponse
 
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
@@ -30,6 +28,7 @@ from django.db.models import Avg, Count, F, Q, Sum
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from catalog.permissions import IsAdminUser
+from config.pagination import OptionalPagination
 
 
 def _int_param(params, name):
@@ -354,11 +353,12 @@ class AdminBookingViewSet(mixins.ListModelMixin, mixins.UpdateModelMixin, viewse
     """Панель: записи за период (?date_from=&date_to=, ГГГГ-ММ-ДД) и смена статуса."""
     serializer_class = AdminBookingSerializer
     permission_classes = [IsAdminUser]
+    pagination_class = OptionalPagination  # ?page=1&page_size=20; без параметров — весь список
 
     def get_queryset(self):
         qs = (
             Booking.objects.select_related("client__profile", "service", "employee")
-            .order_by("date", "start_time")
+            .order_by("date", "start_time", "id")
         )
         for param, lookup in (("date_from", "date__gte"), ("date_to", "date__lte")):
             value = self.request.query_params.get(param)
@@ -503,30 +503,6 @@ class AdminReviewViewSet(mixins.ListModelMixin, mixins.UpdateModelMixin, viewset
         photo.image.delete(save=False)
         photo.delete()
         return Response(self.get_serializer(self.get_object()).data)
-
-    @action(detail=False, methods=["get"], url_path="export")
-    def export_csv(self, request):
-        response = HttpResponse(content_type='text/csv')
-        response['Content-Disposition'] = 'attachment; filename="reviews_export.csv"'
-        response.write('\ufeff'.encode('utf-8')) # BOM для Excel
-
-        writer = csv.writer(response, delimiter=';')
-        writer.writerow(['ID', 'Дата', 'Клиент', 'Мастер', 'Услуга', 'Оценка', 'Статус', 'Текст отзыва', 'Ответ салона'])
-
-        for review in self.get_queryset():
-            booking = review.booking
-            writer.writerow([
-                review.id,
-                review.created_at.strftime("%Y-%m-%d %H:%M"),
-                booking.client.get_full_name() or booking.client.username,
-                booking.employee.full_name,
-                booking.service.name,
-                booking.rating or '',
-                review.get_status_display(),
-                review.text.replace('\n', ' '),
-                review.reply.replace('\n', ' ') if review.reply else ''
-            ])
-        return response
 
 
 class SalonClosureViewSet(viewsets.ModelViewSet):

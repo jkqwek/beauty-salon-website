@@ -22,6 +22,7 @@ from bookings.serializers import BonusOperationSerializer, BookingSerializer
 from bookings.services import bonus_balance, loyalty, ref_code
 from catalog.permissions import IsAdminUser
 from config.images import delete_image, save_image
+from config.pagination import OptionalPagination
 from .models import ClientProfile
 from .serializers import REGULAR_CANDIDATE_DAYS, AdminUserSerializer, MeSerializer, RegisterSerializer
 
@@ -75,17 +76,25 @@ def me_bonus(request):
     return Response(_bonus_summary(request.user))
 
 
+def _phone_q(digits):
+    """Фрагмент номера: телефоны хранятся как +7900…, а ищут часто как 8 900…"""
+    q = Q(profile__phone__contains=digits)
+    if digits[0] == "8":
+        q |= Q(profile__phone__contains="7" + digits[1:])
+    return q
+
+
 def _search_q(text):
     """Поиск клиента по имени, логину, email или телефону (8 900…, +7 (900)… — любое написание)."""
+    if re.fullmatch(r"\+?[\d\s()-]+", text) and len(re.sub(r"\D", "", text)) >= 3:  # запрос похож на номер
+        return _phone_q(re.sub(r"\D", "", text)) | Q(username__icontains=text)
     q = Q()
     for word in text.split():
         part = (Q(username__icontains=word) | Q(first_name__icontains=word)
                 | Q(last_name__icontains=word) | Q(email__icontains=word))
         digits = re.sub(r"\D", "", word)
         if len(digits) >= 3:
-            if digits[0] == "8":  # номер 8 900… хранится как +7 900…
-                digits = "7" + digits[1:]
-            part |= Q(profile__phone__contains=digits)
+            part |= _phone_q(digits)
         q &= part
     return q
 
@@ -94,6 +103,7 @@ class AdminUserViewSet(mixins.ListModelMixin, mixins.UpdateModelMixin, viewsets.
     """Панель: база клиентов со статистикой визитов, смена статуса, контактов и меток."""
     serializer_class = AdminUserSerializer
     permission_classes = [IsAdminUser]
+    pagination_class = OptionalPagination  # ?page=1&page_size=20; без параметров — весь список
 
     def get_queryset(self):
         half_year_ago = timezone.localdate() - timedelta(days=REGULAR_CANDIDATE_DAYS)
@@ -114,7 +124,7 @@ class AdminUserViewSet(mixins.ListModelMixin, mixins.UpdateModelMixin, viewsets.
                     .annotate(total=Sum("amount")).values("total")
                 ), 0),
             )
-            .order_by("-date_joined")
+            .order_by("-date_joined", "-id")
         )
 
     @action(detail=True, methods=["get"])

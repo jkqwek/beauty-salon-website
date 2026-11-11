@@ -79,6 +79,15 @@ function masterPhoto(m: Master): string | undefined {
   return m.photo || m.image || undefined
 }
 
+/** Специализации мастера: «Барбер, массажист» -> ["Барбер", "Массажист"] — фильтр находит его по каждой */
+function specialties(m: Master): string[] {
+  return (m.role || m.position || m.specialization || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map((s) => s[0].toUpperCase() + s.slice(1))
+}
+
 const API_BASE = "/api"
 
 export function HomePage() {
@@ -88,6 +97,16 @@ export function HomePage() {
   const [masters, setMasters] = useState<Master[]>([])
   const [loadingServices, setLoadingServices] = useState(true)
   const [loadingMasters, setLoadingMasters] = useState(true)
+  const [specialty, setSpecialty] = useState<string | null>(null) // ключ в нижнем регистре, null — все
+
+  // кнопки фильтра: уникальные специализации без учёта регистра, в порядке появления
+  const specialtyOptions = new Map<string, string>()
+  for (const m of masters) for (const s of specialties(m)) if (!specialtyOptions.has(s.toLowerCase())) specialtyOptions.set(s.toLowerCase(), s)
+  const shownMasters = specialty ? masters.filter((m) => specialties(m).some((s) => s.toLowerCase() === specialty)) : masters
+  const chipCls = (active: boolean) =>
+    `px-5 py-2 rounded-full text-sm font-medium border transition-colors ${
+      active ? "bg-gold text-white border-gold shadow-sm" : "bg-white text-muted-foreground border-rose-200 hover:border-gold/50 hover:text-gold"
+    }`
 
   useEffect(() => {
     let alive = true
@@ -233,6 +252,19 @@ export function HomePage() {
             </p>
           </div>
 
+          {masters.length >= 2 && specialtyOptions.size >= 2 && (
+            <div className="flex flex-wrap justify-center gap-2 -mt-8 mb-12" role="group" aria-label={t("Специализация мастера")}>
+              <button onClick={() => setSpecialty(null)} aria-pressed={specialty === null} className={chipCls(specialty === null)}>
+                {t("Все")}
+              </button>
+              {[...specialtyOptions].map(([key, label]) => (
+                <button key={key} onClick={() => setSpecialty(key)} aria-pressed={specialty === key} className={chipCls(specialty === key)}>
+                  {t(label)}
+                </button>
+              ))}
+            </div>
+          )}
+
           {loadingMasters ? (
             <div className="flex overflow-x-auto pb-10 -mx-6 px-6 gap-8 snap-x hide-scrollbar">
               {Array.from({ length: 4 }).map((_, i) => (
@@ -252,7 +284,7 @@ export function HomePage() {
             </p>
           ) : (
             <div className="flex overflow-x-auto pb-10 -mx-6 px-6 gap-8 snap-x hide-scrollbar">
-              {masters.map((master) => {
+              {shownMasters.map((master) => {
                 const photo = masterPhoto(master)
                 return (
                   <div

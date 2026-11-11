@@ -12,6 +12,7 @@ import { MastersPage } from "./pages/MastersPage"
 import { ServicesPage } from "./pages/ServicesPage"
 import { ProfilePage } from "./pages/ProfilePage"
 import { ComparePage } from "./pages/ComparePage"
+import { AboutPage } from "./pages/AboutPage"
 import { BookingWizard, type BookingPrefill } from "./components/BookingWizard"
 import { AuthModal } from "./components/AuthModal"
 import { RouteError } from "./components/RouteError"
@@ -125,6 +126,16 @@ function Layout() {
               }
             >
               {t("Отзывы")}
+            </NavLink>
+            <NavLink
+              to="/about"
+              className={({ isActive }) =>
+                `text-sm font-medium whitespace-nowrap transition-colors hover:text-gold ${
+                  isActive ? "text-gold" : "text-muted-foreground"
+                }`
+              }
+            >
+              {t("О нас")}
             </NavLink>
             {user?.is_staff && (
               <NavLink
@@ -245,6 +256,13 @@ function Layout() {
               {t("Отзывы")}
             </NavLink>
             <NavLink
+              to="/about"
+              onClick={() => setMobileMenuOpen(false)}
+              className="text-lg font-medium text-foreground"
+            >
+              {t("О нас")}
+            </NavLink>
+            <NavLink
               to="/profile"
               onClick={() => setMobileMenuOpen(false)}
               className="text-lg font-medium text-foreground flex items-center gap-2"
@@ -325,6 +343,9 @@ function Layout() {
 
           {/* Ссылки (справа) */}
           <div className="flex justify-center md:justify-self-end gap-4 items-center">
+            <NavLink to="/about" className="text-sm text-muted-foreground hover:text-gold transition-colors">
+              {t("О нас")}
+            </NavLink>
             <span className="text-sm text-muted-foreground hover:text-gold cursor-pointer transition-colors">
               {t("ВКонтакте")}
             </span>
@@ -430,6 +451,7 @@ const router = createBrowserRouter([
       { path: "reviews", Component: ReviewsPage },
       { path: "profile", Component: ProfilePage },
       { path: "compare", Component: ComparePage },
+      { path: "about", Component: AboutPage },
       { path: "panel", Component: PanelLayout, children: panelRoutes },
     ],
   },

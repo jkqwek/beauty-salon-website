@@ -99,7 +99,7 @@ export const EN: Record<string, string> = {
   "Только буквы, цифры и символы @ . + - _": "Only letters, digits and the symbols @ . + - _",
   "Введите email": "Enter your email",
   "Введите корректный email": "Enter a valid email",
-  "Введите номер полностью: +7 (900) 123‑45‑67": "Enter the full number: +7 (900) 123‑45‑67",
+  "Введите номер полностью: +7(900)123‑45‑67": "Enter the full number: +7(900)123‑45‑67",
   "Не короче 8 символов": "At least 8 characters",
   "Пароль не может состоять только из цифр": "The password cannot consist of digits only",
   "Пароли не совпадают": "Passwords do not match",
@@ -253,4 +253,29 @@ export const EN: Record<string, string> = {
   // хлебные крошки
   "Навигационная цепочка": "Breadcrumb",
   "Сравнение": "Compare",
+
+  // о нас
+  "О нас": "About",
+  "О салоне Allure": "About Allure",
+  "Место, где забота о себе становится удовольствием.": "A place where self-care becomes a pleasure.",
+  "Allure открылся с простой идеей: каждый гость должен уходить от нас отдохнувшим и уверенным в себе.":
+    "Allure opened with a simple idea: every guest should leave rested and confident.",
+  "Мы собрали команду мастеров, которые любят своё дело, и создали пространство, где хочется задержаться подольше.":
+    "We brought together masters who love their craft and created a space where you want to stay a little longer.",
+  "Стрижки и окрашивание, маникюр, уход за кожей и массаж — всё в одном месте и с одинаково внимательным отношением.":
+    "Haircuts and colouring, manicure, skin care and massage — all in one place, with the same attention to detail.",
+  "Опытные мастера": "Experienced masters",
+  "Каждый мастер — профессионал с многолетним опытом, который регулярно проходит обучение.":
+    "Every master is a seasoned professional who keeps learning.",
+  "Премиальная косметика": "Premium cosmetics",
+  "Работаем только с проверенными профессиональными брендами.": "We only use trusted professional brands.",
+  "Уютная атмосфера": "Cosy atmosphere",
+  "Спокойное пространство, где можно отдохнуть от суеты города.": "A calm space to rest from the city bustle.",
+  "Наша команда": "Our team",
+  "Познакомьтесь с мастерами и выберите своего.": "Meet our masters and choose yours.",
+
+  // фильтр мастеров на главной
+  "Специализация мастера": "Master's specialization",
+  "Стилист": "Stylist",
+  "Барбер": "Barber",
 }

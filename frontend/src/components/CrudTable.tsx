@@ -24,6 +24,7 @@ export interface Field {
   render?: (row: Row, act: RowActions) => ReactNode // своя ячейка таблицы
   inTable?: boolean // false — только в форме
   inForm?: boolean // false — только в таблице
+  validate?: (value: Value) => string | null // проверка до отправки: текст ошибки или null
 }
 
 interface Props {
@@ -45,6 +46,10 @@ interface Props {
 
 export const INPUT =
   "w-full px-4 py-3 rounded-xl border border-rose-200 bg-white focus:outline-none focus:border-gold focus:ring-1 focus:ring-gold transition-shadow"
+const INPUT_INVALID =
+  "w-full px-4 py-3 rounded-xl border border-rose-400 bg-white focus:outline-none focus:border-rose-500 focus:ring-1 focus:ring-rose-500 transition-shadow"
+/** Поле формы: с ошибкой — красная рамка */
+export const inputCls = (invalid: boolean) => (invalid ? INPUT_INVALID : INPUT)
 
 /** Скачать таблицу как CSV. ";" и BOM — чтобы русский Excel разложил по колонкам и не сломал кириллицу */
 export function downloadCsv(filename: string, rows: (string | number)[][]) {
@@ -128,6 +133,7 @@ export function CrudTable({
   const [editing, setEditing] = useState<Row | "new" | null>(null)
   const [values, setValues] = useState<Record<string, Value>>({})
   const [errors, setErrors] = useState<Record<string, string>>({})
+  const [tried, setTried] = useState(false) // была попытка отправки — проверяем поля на лету
   const [formError, setFormError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [listError, setListError] = useState<ApiError | null>(null)
@@ -149,6 +155,7 @@ export function CrudTable({
 
   const open = (row: Row | "new") => {
     setEditing(row)
+    setTried(false)
     setErrors({})
     setFormError(null)
     setValues(
@@ -181,6 +188,11 @@ export function CrudTable({
   const submit = async (e: FormEvent) => {
     e.preventDefault()
     if (!editing) return
+    setTried(true)
+    const invalid = Object.fromEntries(
+      formFields.map((f) => [f.name, f.validate?.(values[f.name]) ?? ""]).filter(([, message]) => message),
+    )
+    if (Object.keys(invalid).length) return setErrors(invalid)
     setSaving(true)
     setFormError(null)
     // пустые дата/время/число — это «не задано»: серверу нужен null, а не ""
@@ -221,12 +233,15 @@ export function CrudTable({
     const v = values[f.name]
     const set = (next: Value) => {
       setValues({ ...values, [f.name]: next })
-      if (errors[f.name]) setErrors({ ...errors, [f.name]: "" })
+      const message = tried ? (f.validate?.(next) ?? "") : ""
+      if (errors[f.name] !== message) setErrors({ ...errors, [f.name]: message })
     }
     const id = `crud-${f.name}`
+    const cls = inputCls(Boolean(errors[f.name]))
+    const invalid = Boolean(errors[f.name]) || undefined
     switch (f.type) {
       case "textarea":
-        return <textarea id={id} rows={3} value={String(v ?? "")} onChange={(e) => set(e.target.value)} className={INPUT} />
+        return <textarea id={id} rows={3} value={String(v ?? "")} onChange={(e) => set(e.target.value)} aria-invalid={invalid} className={cls} />
       case "checkbox":
         return (
           <input id={id} type="checkbox" checked={Boolean(v)} onChange={(e) => set(e.target.checked)} className="size-5 accent-gold" />
@@ -237,7 +252,8 @@ export function CrudTable({
             id={id}
             value={String(v)}
             onChange={(e) => set(f.options!.find((o) => String(o.value) === e.target.value)!.value)}
-            className={INPUT}
+            aria-invalid={invalid}
+            className={cls}
           >
             {f.options!.map((o) => (
               <option key={String(o.value)} value={String(o.value)}>
@@ -267,9 +283,9 @@ export function CrudTable({
         )
       }
       case "tel": // маска +7 (900) 123-45-67
-        return <input id={id} type="tel" value={maskPhone(String(v ?? ""))} onChange={(e) => set(maskPhone(e.target.value))} placeholder="+7 (900) 123-45-67" className={INPUT} />
+        return <input id={id} type="tel" value={maskPhone(String(v ?? ""))} onChange={(e) => set(maskPhone(e.target.value))} placeholder="+7 (900) 123-45-67" aria-invalid={invalid} className={cls} />
       default:
-        return <input id={id} type={f.type ?? "text"} value={String(v ?? "")} onChange={(e) => set(e.target.value)} className={INPUT} />
+        return <input id={id} type={f.type ?? "text"} value={String(v ?? "")} onChange={(e) => set(e.target.value)} aria-invalid={invalid} className={cls} />
     }
   }
 

@@ -8,6 +8,7 @@ import { BookingCalendar, SlotPicker } from "./BookingCalendar"
 import { ErrorMessage } from "./ErrorMessage"
 import { PriceTag } from "./PriceTag"
 import { StarRating } from "./StarRating"
+import { inputCls } from "./CrudTable"
 
 export function ModalShell({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
   return (
@@ -114,6 +115,10 @@ export function ReviewModal({ booking, onClose, onDone }: { booking: Booking; on
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<ApiError | string | null>(null)
   const length = text.trim().length
+  // ошибки полей видны после первой попытки отправить и пересчитываются при вводе
+  const [tried, setTried] = useState(false)
+  const ratingError = !rating ? "Поставьте оценку от 1 до 5." : null
+  const textError = length < 10 ? "Напишите хотя бы пару слов — от 10 символов." : null
 
   const [previews, setPreviews] = useState<string[]>([])
   useEffect(() => {
@@ -133,8 +138,8 @@ export function ReviewModal({ booking, onClose, onDone }: { booking: Booking; on
   }
 
   const submit = async () => {
-    if (!rating) return setError("Поставьте оценку от 1 до 5.")
-    if (length < 10) return setError("Напишите хотя бы пару слов — от 10 символов.")
+    setTried(true)
+    if (ratingError || textError) return
     setSaving(true)
     setError(null)
     try {
@@ -153,7 +158,10 @@ export function ReviewModal({ booking, onClose, onDone }: { booking: Booking; on
       </p>
       <div className="space-y-2">
         <p className="text-sm font-medium text-foreground">Оценка</p>
-        <StarRating value={rating} onChange={setRating} size="size-7" />
+        <div className={`inline-block rounded-xl px-2 py-1 -mx-2 ${tried && ratingError ? "ring-1 ring-rose-400 bg-rose-50" : ""}`}>
+          <StarRating value={rating} onChange={setRating} size="size-7" />
+        </div>
+        {tried && ratingError && <p className="text-sm text-rose-600">{ratingError}</p>}
       </div>
       <div className="space-y-2">
         <label htmlFor="review-text" className="text-sm font-medium text-foreground">
@@ -166,9 +174,13 @@ export function ReviewModal({ booking, onClose, onDone }: { booking: Booking; on
           value={text}
           onChange={(e) => setText(e.target.value)}
           placeholder="Что понравилось, что можно улучшить"
-          className="w-full px-4 py-3 rounded-xl border border-rose-200 bg-white focus:outline-none focus:border-gold focus:ring-1 focus:ring-gold transition-shadow"
+          aria-invalid={Boolean(tried && textError)}
+          className={inputCls(Boolean(tried && textError))}
         />
-        <p className="text-xs text-muted-foreground text-right">{length} / 1000</p>
+        <div className="flex justify-between gap-4">
+          <p className="text-sm text-rose-600">{tried && textError}</p>
+          <p className="text-xs text-muted-foreground shrink-0">{length} / 1000</p>
+        </div>
       </div>
       <div className="space-y-2">
         <p className="text-sm font-medium text-foreground">Фото (необязательно)</p>

@@ -15,6 +15,7 @@ import { Check, Clock, Download, Scale } from "lucide-react"
 import { ShareButtons } from "../components/ShareButtons"
 import { TagChips, tagName } from "../components/TagChips"
 import { toast } from "../components/Toast"
+import { Breadcrumbs, type Crumb } from "../components/Breadcrumbs"
 
 const CATEGORIES = ["Все", "Волосы", "Ногти", "Кожа", "Массаж"]
 
@@ -55,6 +56,14 @@ export function ServicesPage() {
     }
   }, [target, data])
 
+  // крошки: Главная › Услуги › категория › тег; «Услуги» сбрасывает фильтры, категория — только тег
+  const crumbs: Crumb[] = [
+    { label: t("Главная"), to: "/" },
+    { label: t("Услуги"), to: "/services", onClick: () => (setActiveCategory("Все"), setActiveTag(null)) },
+  ]
+  if (activeCategory !== "Все") crumbs.push({ label: t(activeCategory), to: "/services", onClick: () => setActiveTag(null) })
+  if (activeTag) crumbs.push({ label: tagName(activeTag) })
+
   const toggleCompare = (id: number) => {
     if (!compare.toggle(id)) toast(t("Сравнить можно не больше 4 услуг. Уберите одну из сравнения."))
   }
@@ -63,6 +72,7 @@ export function ServicesPage() {
     <div className="flex-1 bg-pearl pb-24">
       {/* Header */}
       <div className="bg-rose-50 border-b border-rose-100 py-16 px-6 text-center">
+        <Breadcrumbs items={crumbs} />
         <h1 className="text-4xl md:text-5xl font-serif text-foreground mb-4">
           {t("Наши услуги")}
         </h1>

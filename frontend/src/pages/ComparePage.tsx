@@ -8,6 +8,7 @@ import { useCompare } from "@/lib/compare"
 import { formatDuration } from "@/lib/format"
 import { t } from "@/lib/i18n"
 import type { BookingPrefill } from "../components/BookingWizard"
+import { Breadcrumbs } from "../components/Breadcrumbs"
 import { ErrorMessage } from "../components/ErrorMessage"
 import { ImageWithFallback } from "../components/ImageWithFallback"
 import { PriceTag } from "../components/PriceTag"
@@ -107,6 +108,7 @@ export function ComparePage() {
   return (
     <div className="flex-1 bg-pearl pb-24">
       <div className="bg-rose-50 border-b border-rose-100 py-16 px-6 text-center">
+        <Breadcrumbs items={[{ label: t("Главная"), to: "/" }, { label: t("Услуги"), to: "/services" }, { label: t("Сравнение") }]} />
         <h1 className="text-4xl md:text-5xl font-serif text-foreground mb-4">{t("Сравнение услуг")}</h1>
         <p className="text-muted-foreground max-w-2xl mx-auto">
           {t("До 4 услуг рядом: цена, длительность, мастера и теги. Добавляйте услуги кнопкой «Сравнить» на странице «Услуги».")}

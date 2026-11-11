@@ -3,7 +3,7 @@ import { supportApi } from "@/api/api"
 import { toApiError } from "@/api/client"
 import { ErrorMessage } from "./ErrorMessage"
 import { X } from "lucide-react"
-import { INPUT } from "./CrudTable"
+import { INPUT, inputCls } from "./CrudTable"
 
 export function BugReportModal({ onClose }: { onClose: () => void }) {
   const [text, setText] = useState("")
@@ -11,12 +11,13 @@ export function BugReportModal({ onClose }: { onClose: () => void }) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
+  const [tried, setTried] = useState(false) // после первой попытки ошибка пересчитывается при вводе
+  const textError = text.trim().length < 10 ? "Опишите проблему подробнее — минимум 10 символов." : null
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (text.trim().length < 10) {
-      return setError("Пожалуйста, опишите проблему подробнее (минимум 10 символов).")
-    }
+    setTried(true)
+    if (textError) return
 
     setSaving(true)
     setError(null)
@@ -55,21 +56,23 @@ export function BugReportModal({ onClose }: { onClose: () => void }) {
               </button>
             </div>
           ) : (
-            <form onSubmit={submit} className="space-y-4">
+            <form onSubmit={submit} noValidate className="space-y-4">
               <p className="text-sm text-muted-foreground mb-4">
                 Что-то сломалось или работает неправильно? Расскажите нам, и мы починим.
               </p>
 
               <div className="space-y-1.5">
-                <label className="text-sm font-medium text-foreground">Описание проблемы</label>
+                <label htmlFor="bug-text" className="text-sm font-medium text-foreground">Описание проблемы</label>
                 <textarea
+                  id="bug-text"
                   value={text}
                   onChange={(e) => setText(e.target.value)}
                   rows={4}
                   placeholder="Опишите, что произошло..."
-                  className={INPUT}
-                  required
+                  aria-invalid={Boolean(tried && textError)}
+                  className={inputCls(Boolean(tried && textError))}
                 />
+                {tried && textError && <p className="text-sm text-rose-600">{textError}</p>}
               </div>
 
               <div className="space-y-1.5">

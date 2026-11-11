@@ -249,4 +249,8 @@ export const EN: Record<string, string> = {
   "Спасибо за отзыв! Он появится на сайте после проверки.": "Thank you for the review! It will appear on the site after moderation.",
   "Профиль сохранён": "Profile saved",
   "Сообщить об ошибке": "Report a bug",
+
+  // хлебные крошки
+  "Навигационная цепочка": "Breadcrumb",
+  "Сравнение": "Compare",
 }

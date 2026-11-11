@@ -63,6 +63,7 @@ import { AvatarCropper } from "../components/AvatarCropper"
 import { CrudTable, INPUT, downloadCsv, exportButton, type Option, type Row, type RowActions, type Value } from "../components/CrudTable"
 import { ConfirmDialog } from "../components/ConfirmDialog"
 import { ErrorMessage } from "../components/ErrorMessage"
+import { validators } from "@/lib/validators"
 import { ModalShell } from "../components/ClientModals"
 import { PhotoLightbox } from "../components/ReviewCard"
 import { BOOKING_STATUS, COUNTERS_CHANGED } from "../components/StatusBadge"
@@ -76,6 +77,11 @@ import { FinancePage } from "./FinancePage"
 const DAYS: Option[] = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"].map(
   (label, value) => ({ value, label }),
 )
+
+// проверки полей до отправки формы (сервер всё равно перепроверит)
+const required = (v: Value) => (String(v ?? "").trim() ? null : "Заполните это поле")
+const positive = (v: Value) => (Number(v) > 0 ? null : "Должно быть больше нуля")
+const phone = (v: Value) => validators.phone(String(v ?? ""))
 
 const badge = (text: string, cls: string) => (
   <span className={`inline-block px-3 py-1 rounded-full border text-xs font-medium whitespace-nowrap ${cls}`}>{text}</span>
@@ -617,8 +623,8 @@ function ClientsSection() {
           ),
         },
         { name: "last_name", label: "Фамилия", inTable: false },
-        { name: "phone", label: "Телефон", type: "tel", render: (r) => <span className="whitespace-nowrap">{maskPhone(r.phone ?? "") || "—"}</span> },
-        { name: "email", label: "Email", inTable: false },
+        { name: "phone", label: "Телефон", type: "tel", validate: phone, render: (r) => <span className="whitespace-nowrap">{maskPhone(r.phone ?? "") || "—"}</span> },
+        { name: "email", label: "Email", inTable: false, validate: (v) => (v ? validators.email(String(v)) : null) },
         {
           name: "is_staff",
           label: "Статус",
@@ -790,15 +796,16 @@ function ServicesSection() {
           rowClass={(r) => (r.is_active ? "" : "opacity-50")}
           fields={[
             { name: "image", label: "Фото", inForm: false, render: (r, act) => <ServiceImageCell row={r} act={act} /> },
-            { name: "name", label: "Название" },
+            { name: "name", label: "Название", validate: required },
             { name: "category", label: "Категория" },
             {
               name: "price",
               label: "Цена",
               type: "number",
+              validate: positive,
               render: (r) => <PriceTag base={r.price} price={r.price_today} discount={r.discount_percent} className="whitespace-nowrap" />,
             },
-            { name: "duration_minutes", label: "Минут", type: "number" },
+            { name: "duration_minutes", label: "Минут", type: "number", validate: positive },
             {
               name: "tags",
               label: "Теги",
@@ -1041,7 +1048,7 @@ function PromotionsAdminSection() {
       endpoint="/admin/promotions/"
       rowClass={(r) => (!r.is_active || r.date_to < today ? "opacity-50" : "")}
       fields={[
-        { name: "name", label: "Название" },
+        { name: "name", label: "Название", validate: required },
         {
           name: "discount_percent",
           label: "Скидка, %",
@@ -1128,9 +1135,9 @@ function MastersSection() {
       rowClass={(r) => (r.is_active ? "" : "opacity-50")}
       fields={[
         { name: "photo", label: "Фото", inForm: false, render: (r, act) => <MasterPhotoCell row={r} act={act} /> },
-        { name: "full_name", label: "ФИО" },
+        { name: "full_name", label: "ФИО", validate: required },
         { name: "specialization", label: "Специализация" },
-        { name: "phone", label: "Телефон", type: "tel", render: (r) => <span className="whitespace-nowrap">{maskPhone(r.phone ?? "") || "—"}</span> },
+        { name: "phone", label: "Телефон", type: "tel", validate: phone, render: (r) => <span className="whitespace-nowrap">{maskPhone(r.phone ?? "") || "—"}</span> },
         { name: "services", label: "Услуги", type: "multiselect", options: services.data.map((s) => ({ value: s.id, label: s.name })) },
         { name: "user", label: "Аккаунт сотрудника (для «Моего кабинета»)", type: "select", options: accounts },
         { name: "is_active", label: "Работает", type: "checkbox", default: true },
@@ -1182,7 +1189,7 @@ function StockSection() {
       endpoint="/finance/stock/"
       rowClass={(r) => (isLow(r) ? "bg-rose-50/60" : "")}
       fields={[
-        { name: "name", label: "Название" },
+        { name: "name", label: "Название", validate: required },
         {
           name: "category",
           label: "Категория",

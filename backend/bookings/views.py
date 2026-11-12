@@ -10,7 +10,11 @@ from rest_framework.response import Response
 from rest_framework import mixins, serializers, status, viewsets
 
 from catalog.models import Employee, Service, price_on
-from .models import ACTIVE_STATUSES, CancellationPolicy, Review, SalonClosure, Schedule, Booking, TimeOff, User
+from config.images import prepare_image
+from .models import (
+    ACTIVE_STATUSES, MAX_REVIEW_PHOTOS, CancellationPolicy, Review, ReviewPhoto, SalonClosure, Schedule, Booking,
+    TimeOff, User,
+)
 from .serializers import (
     AdminBookingSerializer, AdminReviewSerializer, BookingCreateSerializer, BookingSerializer,
     CancellationPolicySerializer, PublicReviewSerializer, ReviewCreateSerializer, SalonClosureSerializer,
@@ -21,12 +25,13 @@ from .throttles import GuestBookingThrottle, PublicSlotsThrottle
 
 from .services import (
     MAX_DAYS_AHEAD, available_days, cancel_deadline_error, closure_conflicts, closures_between, conflict_label,
-    get_free_slots, recalc_master_rating, reschedule,
+    apply_promo, find_promo, get_free_slots, recalc_master_rating, reschedule,
 )
 from django.db.models import Avg, Count, F, Q, Sum
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from catalog.permissions import IsAdminUser
+from config.pagination import OptionalPagination
 
 
 def _int_param(params, name):
@@ -126,6 +131,21 @@ def price_view(request):
         "discount_percent": promo.discount_percent if promo else 0,
         "promotion": promo.name if promo else None,
     })
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def promo_check(request):
+    """Проверка промокода до записи: ?code= (+ service_id и date — тогда вернётся цена со скидкой)."""
+    promo, error = find_promo(request.query_params.get("code"), request.user)
+    if not promo:
+        raise ValidationError({"code": error or "Введите промокод."})
+    data = {"code": promo.code, "discount_percent": promo.discount_percent}
+    if request.query_params.get("service_id") and request.query_params.get("date"):
+        service = get_object_or_404(Service, pk=_int_param(request.query_params, "service_id"))
+        price, _ = price_on(service, _date_param(request.query_params, "date"))
+        data["price"] = str(apply_promo(price, promo))
+    return Response(data)
 
 
 @api_view(["POST"])
@@ -233,6 +253,54 @@ def popular_services_report(request):
     ])
 
 @api_view(["GET"])
+@permission_classes([AllowAny])
+def top_services(request):
+    """Топ популярных услуг по числу неотменённых записей: ?limit=5 (по умолчанию 5, не больше 20)."""
+    limit = min(_int_param(request.query_params, "limit") if request.query_params.get("limit") else 5, 20)
+    services = (
+        Service.objects.filter(is_active=True)
+        .annotate(bookings_count=Count("bookings", filter=Q(bookings__status__in=("pending", "confirmed", "completed"))))
+        .filter(bookings_count__gt=0)
+        .order_by("-bookings_count", "name")[:limit]
+    )
+    return Response([
+        {"id": s.id, "name": s.name, "category": s.category, "price": str(s.price),
+         "bookings_count": s.bookings_count}
+        for s in services
+    ])
+
+
+@api_view(["GET"])
+@permission_classes([IsAdminUser])
+def salon_stats(request):
+    """Общая статистика салона (панель). Необязательно: ?date_from=&date_to= — по дате записи."""
+    bookings = Booking.objects.all()
+    if request.query_params.get("date_from"):
+        bookings = bookings.filter(date__gte=_date_param(request.query_params, "date_from"))
+    if request.query_params.get("date_to"):
+        bookings = bookings.filter(date__lte=_date_param(request.query_params, "date_to"))
+    by_status = {code: 0 for code, _ in Booking.STATUS_CHOISES}
+    for row in bookings.values("status").annotate(n=Count("id")):
+        by_status[row["status"]] = row["n"]
+    total = sum(by_status.values())
+    completed = bookings.filter(status="completed")
+    money = completed.aggregate(revenue=Sum("price"), average=Avg("price"))
+    top = completed.values("service__name").annotate(n=Count("id")).order_by("-n").first()
+    return Response({
+        "clients": User.objects.filter(is_staff=False).count(),
+        "new_clients_30d": User.objects.filter(is_staff=False, date_joined__gte=timezone.now() - timedelta(days=30)).count(),
+        "masters": Employee.objects.filter(is_active=True).count(),
+        "services": Service.objects.filter(is_active=True).count(),
+        "bookings_total": total,
+        "by_status": by_status,
+        "cancel_rate": round(100 * by_status["cancelled"] / total, 1) if total else 0,
+        "revenue": str(money["revenue"] or 0),
+        "average_check": str(round(money["average"], 2)) if money["average"] else "0",
+        "top_service": top["service__name"] if top else None,
+    })
+
+
+@api_view(["GET"])
 @permission_classes([IsAdminUser])
 def new_bookings_since(request):
     after_id = request.query_params.get("after_id")
@@ -311,11 +379,12 @@ class AdminBookingViewSet(mixins.ListModelMixin, mixins.UpdateModelMixin, viewse
     """Панель: записи за период (?date_from=&date_to=, ГГГГ-ММ-ДД) и смена статуса."""
     serializer_class = AdminBookingSerializer
     permission_classes = [IsAdminUser]
+    pagination_class = OptionalPagination  # ?page=1&page_size=20; без параметров — весь список
 
     def get_queryset(self):
         qs = (
             Booking.objects.select_related("client__profile", "service", "employee")
-            .order_by("date", "start_time")
+            .order_by("date", "start_time", "id")
         )
         for param, lookup in (("date_from", "date__gte"), ("date_to", "date__lte")):
             value = self.request.query_params.get(param)
@@ -403,8 +472,8 @@ def salon_load(request):
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def leave_review(request, booking_id):
-    """Отзыв о своём выполненном визите: один на визит. Оценка сразу идёт в рейтинг мастера,
-    текст публикуется после модерации."""
+    """Отзыв о своём выполненном визите: один на визит, до 3 фото (поле photos). Оценка сразу идёт
+    в рейтинг мастера, текст и фото публикуются после модерации."""
     booking = get_object_or_404(Booking.objects.select_related("employee"), pk=booking_id, client=request.user)
     if booking.status != "completed":
         raise ValidationError("Отзыв можно оставить только после визита.")
@@ -412,7 +481,13 @@ def leave_review(request, booking_id):
         raise ValidationError("Отзыв на этот визит уже оставлен.")
     data = ReviewCreateSerializer(data=request.data)
     data.is_valid(raise_exception=True)
-    Review.objects.create(booking=booking, text=data.validated_data["text"])
+    uploads = request.FILES.getlist("photos")
+    if len(uploads) > MAX_REVIEW_PHOTOS:
+        raise ValidationError({"photos": f"Не больше {MAX_REVIEW_PHOTOS} фото."})
+    photos = [prepare_image(f, "photos", max_side=1600) for f in uploads]  # проверяем все до сохранения
+    review = Review.objects.create(booking=booking, text=data.validated_data["text"])
+    for image in photos:
+        ReviewPhoto.objects.create(review=review, image=image)
     booking.rating = data.validated_data["rating"]  # то же поле, что у оценки из бота
     booking.save(update_fields=["rating"])
     recalc_master_rating(booking.employee)
@@ -425,7 +500,7 @@ def public_reviews(request):
     """Опубликованные отзывы: ?employee= — о мастере, ?min_rating=&limit= — для блока на главной."""
     qs = Review.objects.filter(status="published").select_related(
         "booking__client__profile", "booking__employee", "booking__service"
-    )
+    ).prefetch_related("photos")
     params = request.query_params
     if params.get("employee"):
         qs = qs.filter(booking__employee_id=_int_param(params, "employee"))
@@ -441,10 +516,19 @@ def public_reviews(request):
 
 
 class AdminReviewViewSet(mixins.ListModelMixin, mixins.UpdateModelMixin, viewsets.GenericViewSet):
-    """Модерация отзывов: статус и ответ салона."""
-    queryset = Review.objects.select_related("booking__client__profile", "booking__employee", "booking__service")
+    """Модерация отзывов: статус, ответ салона и удаление неуместных фото."""
+    queryset = Review.objects.select_related(
+        "booking__client__profile", "booking__employee", "booking__service"
+    ).prefetch_related("photos")
     serializer_class = AdminReviewSerializer
     permission_classes = [IsAdminUser]
+
+    @action(detail=True, methods=["delete"], url_path=r"photos/(?P<photo_id>\d+)")
+    def delete_photo(self, request, pk=None, photo_id=None):
+        photo = get_object_or_404(ReviewPhoto, pk=photo_id, review_id=pk)
+        photo.image.delete(save=False)
+        photo.delete()
+        return Response(self.get_serializer(self.get_object()).data)
 
 
 class SalonClosureViewSet(viewsets.ModelViewSet):

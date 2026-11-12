@@ -1,8 +1,13 @@
+import re
+
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
+from django.db.models import Q
 from django.utils import timezone
 from rest_framework import serializers
 
+from bookings.models import ACTIVE_STATUSES, Referral
+from bookings.services import bonus_balance, find_referrer, level_for
 from config.images import RelativeImageField
 from .models import ClientProfile
 from django.core.exceptions import ValidationError as DjangoValidationError
@@ -12,14 +17,62 @@ REGULAR_CANDIDATE_VISITS = 5  # подсказка ⭐: столько заве�
 REGULAR_CANDIDATE_DAYS = 183  # …за последние полгода
 
 
+def normalize_phone(value):
+    """Российский номер в виде +79001234567. Подходят 8 900 123-45-67, +7 (900) 123 45 67, 9001234567;
+    не похоже на номер — None."""
+    if not re.fullmatch(r"\+?[\d\s()-]+", value):
+        return None
+    digits = re.sub(r"\D", "", value)
+    if value.startswith("+"):  # с кодом страны — только полный номер +7 и 10 цифр
+        return f"+{digits}" if len(digits) == 11 and digits[0] == "7" else None
+    if len(digits) == 11 and digits[0] in "78":
+        digits = digits[1:]
+    return f"+7{digits}" if len(digits) == 10 else None
+
+
+class PhoneField(serializers.CharField):
+    """Телефон из профиля: необязательный, хранится в виде +79001234567."""
+
+    def __init__(self, **kwargs):
+        super().__init__(source="profile.phone", required=False, allow_blank=True, max_length=20, **kwargs)
+
+    def to_internal_value(self, data):
+        value = super().to_internal_value(data)
+        if not value:
+            return ""
+        phone = normalize_phone(value)
+        if not phone:
+            raise serializers.ValidationError("Введите номер в формате +7 900 123-45-67.")
+        return phone
+
+
 class RegisterSerializer(serializers.ModelSerializer):
     email = serializers.EmailField()  # обязательный (у модели User он необязательный)
     password = serializers.CharField(write_only=True, validators=[validate_password])
     password2 = serializers.CharField(write_only=True)
+    phone = serializers.CharField(write_only=True, required=False, allow_blank=True, max_length=20)
+    referral_code = serializers.CharField(write_only=True, required=False, allow_blank=True, max_length=30)
 
     class Meta:
         model = User
-        fields = ("username", "email", "password", "password2")
+        fields = ("username", "email", "phone", "password", "password2", "referral_code")
+
+    def validate_phone(self, value):
+        if not value.strip():
+            return ""
+        phone = normalize_phone(value.strip())
+        if not phone:
+            raise serializers.ValidationError("Введите номер в формате +7 900 123-45-67.")
+        return phone
+
+    def validate_referral_code(self, value):
+        """Код друга (ALLURE-12) → пригласивший пользователь."""
+        if not value.strip():
+            return None
+        referrer = find_referrer(value)
+        if not referrer:
+            raise serializers.ValidationError("Неверный код приглашения.")
+        return referrer
 
     def validate_email(self, value):
         value = value.strip().lower()
@@ -39,16 +92,21 @@ class RegisterSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         validated_data.pop("password2")
+        phone, referrer = validated_data.get("phone"), validated_data.get("referral_code")
         user = User.objects.create_user(
             username=validated_data["username"],
             email=validated_data.get("email", ""),
             password=validated_data["password"],
         )
+        if phone:
+            ClientProfile.objects.update_or_create(client=user, defaults={"phone": phone})
+        if referrer:
+            Referral.objects.create(referrer=referrer, friend=user)
         return user
 
 class AdminUserSerializer(serializers.ModelSerializer):
     """Клиент в панели: статус (is_staff = сотрудник), контакты, метки салона и статистика визитов."""
-    phone = serializers.CharField(source="profile.phone", required=False, allow_blank=True, max_length=20)
+    phone = PhoneField()
     note = serializers.CharField(source="profile.note", required=False, allow_blank=True, max_length=1000)
     is_regular = serializers.BooleanField(source="profile.is_regular", required=False)
     is_blocked = serializers.BooleanField(source="profile.is_blocked", required=False)
@@ -62,14 +120,20 @@ class AdminUserSerializer(serializers.ModelSerializer):
     visits = serializers.IntegerField(read_only=True)
     last_visit = serializers.DateField(read_only=True)
     total_spent = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
+    bonus_balance = serializers.IntegerField(read_only=True)
     is_candidate = serializers.SerializerMethodField()
+    loyalty_level = serializers.SerializerMethodField()
 
     class Meta:
         model = User
         fields = ("id", "username", "first_name", "last_name", "email", "phone", "avatar", "is_staff",
                   "date_joined", "note", "is_regular", "is_candidate", "is_blocked", "blocked_reason",
-                  "blocked_at", "master", "visits", "last_visit", "total_spent")
+                  "blocked_at", "master", "visits", "last_visit", "total_spent", "bonus_balance", "loyalty_level")
         read_only_fields = ("username", "date_joined")
+
+    def get_loyalty_level(self, user):
+        """Бронза / Серебро / Золото по сумме выполненных визитов."""
+        return level_for(getattr(user, "total_spent", None))["name"]
 
     def get_is_candidate(self, user):
         """Подсказка ⭐: часто ходит, но ещё не отмечен постоянным."""
@@ -102,14 +166,35 @@ class AdminUserSerializer(serializers.ModelSerializer):
 class MeSerializer(serializers.ModelSerializer):
     """Свой профиль в личном кабинете. Аватар загружается отдельным запросом."""
     email = serializers.EmailField()
-    phone = serializers.CharField(source="profile.phone", required=False, allow_blank=True, max_length=20)
+    phone = PhoneField()
     avatar = RelativeImageField(source="profile.avatar")
     is_blocked = serializers.BooleanField(source="profile.is_blocked", read_only=True)
+    bonus_balance = serializers.SerializerMethodField()
+    next_booking = serializers.SerializerMethodField()
 
     class Meta:
         model = User
-        fields = ("id", "username", "email", "first_name", "last_name", "phone", "avatar", "is_staff", "is_blocked")
+        fields = ("id", "username", "email", "first_name", "last_name", "phone", "avatar", "is_staff", "is_blocked",
+                  "bonus_balance", "next_booking")
         read_only_fields = ("username", "is_staff")
+
+    def get_bonus_balance(self, user):
+        return bonus_balance(user)
+
+    def get_next_booking(self, user):
+        """Ближайшая предстоящая запись — для напоминания в шапке сайта и в кабинете."""
+        now = timezone.localtime()
+        b = (
+            user.bookings.filter(status__in=ACTIVE_STATUSES)
+            .filter(Q(date__gt=now.date()) | Q(date=now.date(), start_time__gt=now.time()))
+            .select_related("service", "employee")
+            .order_by("date", "start_time")
+            .first()
+        )
+        if b is None:
+            return None
+        return {"id": b.id, "date": b.date, "start_time": b.start_time,
+                "service_name": b.service.name, "employee_name": b.employee.full_name}
 
     def validate_email(self, value):
         value = value.strip().lower()

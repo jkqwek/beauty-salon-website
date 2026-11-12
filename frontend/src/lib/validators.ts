@@ -1,3 +1,4 @@
+import { t } from "./i18n"
 // Клиентская проверка — только подсказка пользователю. Настоящая проверка на сервере.
 
 export type FieldErrors = Record<string, string>
@@ -5,29 +6,40 @@ export type FieldErrors = Record<string, string>
 export const validators = {
   username(value: string): string | null {
     const v = value.trim()
-    if (!v) return "Введите имя пользователя"
-    if (v.length < 3) return "Не короче 3 символов"
-    if (v.length > 150) return "Не длиннее 150 символов"
-    if (!/^[\p{L}\p{N}_.@+-]+$/u.test(v)) return "Только буквы, цифры и символы @ . + - _"
+    if (!v) return t("Введите имя пользователя")
+    if (v.length < 3) return t("Не короче 3 символов")
+    if (v.length > 150) return t("Не длиннее 150 символов")
+    if (!/^[\p{L}\p{N}_.@+-]+$/u.test(v)) return t("Только буквы, цифры и символы @ . + - _")
     return null
   },
 
   email(value: string): string | null {
     const v = value.trim()
-    if (!v) return "Введите email"
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) return "Введите корректный email"
+    if (!v) return t("Введите email")
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) return t("Введите корректный email")
     return null
   },
 
+  /** Российский номер: 8 900 123-45-67, +7 (900) 123 45 67, 9001234567. Пустой — можно */
+  phone(value: string): string | null {
+    const v = value.trim()
+    if (!v) return null
+    const digits = v.replace(/\D/g, "")
+    // с кодом страны — только полный номер +7 и 10 цифр; без него — 10 цифр или 11 с 8/7 впереди
+    const full = v.startsWith("+") ? /^7\d{10}$/.test(digits) : digits.length === 10 || (digits.length === 11 && /^[78]/.test(digits))
+    const ok = /^\+?[\d\s()-]+$/.test(v) && full
+    return ok ? null : t("Введите номер полностью: +7 (900) 123‑45‑67") // неразрывно, чтобы номер не переносился
+  },
+
   password(value: string): string | null {
-    if (!value) return "Введите пароль"
-    if (value.length < 8) return "Не короче 8 символов"
-    if (/^\d+$/.test(value)) return "Пароль не может состоять только из цифр"
+    if (!value) return t("Введите пароль")
+    if (value.length < 8) return t("Не короче 8 символов")
+    if (/^\d+$/.test(value)) return t("Пароль не может состоять только из цифр")
     return null
   },
 
   passwordRepeat(value: string, original: string): string | null {
-    return value === original ? null : "Пароли не совпадают"
+    return value === original ? null : t("Пароли не совпадают")
   },
 }
 

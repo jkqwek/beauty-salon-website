@@ -1,3 +1,4 @@
+import { locale, t } from "@/lib/i18n"
 import { useState } from "react"
 import { ChevronLeft, ChevronRight } from "lucide-react"
 import { bookingApi } from "@/api/api"
@@ -51,13 +52,13 @@ export function BookingCalendar({ serviceId, employeeId, bookingId, value, onCha
     <div className="bg-white rounded-2xl p-6 border border-rose-100">
       <div className="flex items-center justify-between mb-4">
         <span className="font-medium text-foreground capitalize">
-          {new Date(y, m - 1, 1).toLocaleDateString("ru-RU", { month: "long", year: "numeric" })}
+          {new Date(y, m - 1, 1).toLocaleDateString(locale(), { month: "long", year: "numeric" })}
         </span>
         <div className="flex gap-2">
           <button
             disabled={month <= today.slice(0, 7)}
             onClick={() => shiftMonth(-1)}
-            aria-label="Предыдущий месяц"
+            aria-label={t("Предыдущий месяц")}
             className="p-1 text-muted-foreground hover:text-foreground disabled:opacity-30"
           >
             <ChevronLeft className="size-5" />
@@ -65,7 +66,7 @@ export function BookingCalendar({ serviceId, employeeId, bookingId, value, onCha
           <button
             disabled={`${month}-31` >= lastDay}
             onClick={() => shiftMonth(1)}
-            aria-label="Следующий месяц"
+            aria-label={t("Следующий месяц")}
             className="p-1 text-muted-foreground hover:text-foreground disabled:opacity-30"
           >
             <ChevronRight className="size-5" />
@@ -76,7 +77,7 @@ export function BookingCalendar({ serviceId, employeeId, bookingId, value, onCha
       <div className={`grid grid-cols-7 gap-1 text-center mb-2 transition-opacity ${days.loading ? "opacity-50" : ""}`}>
         {WEEKDAYS.map((d) => (
           <span key={d} className="text-xs font-medium text-muted-foreground py-2">
-            {d}
+            {t(d)}
           </span>
         ))}
         {Array.from({ length: offset }, (_, i) => (
@@ -86,7 +87,7 @@ export function BookingCalendar({ serviceId, employeeId, bookingId, value, onCha
           const iso = `${month}-${String(i + 1).padStart(2, "0")}`
           const holiday = holidays[iso]
           const free = available.has(iso)
-          const hint = holiday ?? (iso >= today && iso <= lastDay && !free && days.data ? "Нет свободного времени" : undefined)
+          const hint = holiday ?? (iso >= today && iso <= lastDay && !free && days.data ? t("Нет свободного времени") : undefined)
           return (
             <button
               key={iso}

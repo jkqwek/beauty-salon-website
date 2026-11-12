@@ -2,9 +2,10 @@ import { useState, type FormEvent, type ReactNode } from "react"
 import { Download, Pencil, Plus, Search, Trash, X } from "lucide-react"
 import { api, fieldMessages, toApiError, type ApiError } from "@/api/client"
 import { useApi } from "@/api/useApi"
+import { maskPhone } from "@/lib/format"
 import { ErrorMessage } from "./ErrorMessage"
 
-export type Value = string | number | boolean | null | number[]
+export type Value = string | number | boolean | null | (string | number)[]
 export type Row = { id: number; [key: string]: any }
 export type Option = { value: Value; label: string }
 /** Действия из ячейки: поменять поле строки (⭐ в один клик), выполнить свой запрос или перечитать таблицу */
@@ -17,12 +18,13 @@ export type RowActions = {
 export interface Field {
   name: string
   label: string
-  type?: "text" | "number" | "date" | "time" | "textarea" | "checkbox" | "select" | "multiselect"
+  type?: "text" | "tel" | "number" | "date" | "time" | "textarea" | "checkbox" | "select" | "multiselect"
   options?: Option[]
   default?: Value
   render?: (row: Row, act: RowActions) => ReactNode // своя ячейка таблицы
   inTable?: boolean // false — только в форме
   inForm?: boolean // false — только в таблице
+  validate?: (value: Value) => string | null // проверка до отправки: текст ошибки или null
 }
 
 interface Props {
@@ -39,10 +41,15 @@ interface Props {
   defaultFilter?: number | null // индекс фильтра, включённого при открытии
   // false — не сохранять; может спросить сервер (например, какие записи попадут на праздник)
   beforeSubmit?: (values: Record<string, Value>, row: Row | "new") => boolean | Promise<boolean>
+  onExport?: (rows: Row[]) => void // <--- ДОБАВЛЕНО: кастомная функция скачивания
 }
 
 export const INPUT =
   "w-full px-4 py-3 rounded-xl border border-rose-200 bg-white focus:outline-none focus:border-gold focus:ring-1 focus:ring-gold transition-shadow"
+const INPUT_INVALID =
+  "w-full px-4 py-3 rounded-xl border border-rose-400 bg-white focus:outline-none focus:border-rose-500 focus:ring-1 focus:ring-rose-500 transition-shadow"
+/** Поле формы: с ошибкой — красная рамка */
+export const inputCls = (invalid: boolean) => (invalid ? INPUT_INVALID : INPUT)
 
 /** Скачать таблицу как CSV. ";" и BOM — чтобы русский Excel разложил по колонкам и не сломал кириллицу */
 export function downloadCsv(filename: string, rows: (string | number)[][]) {
@@ -74,9 +81,10 @@ const labelOf = (f: Field, v: unknown) => f.options?.find((o) => o.value === v)?
 function text(f: Field, row: Row): string {
   const v = row[f.name]
   if (f.type === "select") return labelOf(f, v)
-  if (f.type === "multiselect") return (v as number[]).map((id) => labelOf(f, id)).join(", ")
+  if (f.type === "multiselect") return (v as (string | number)[]).map((id) => labelOf(f, id)).join(", ")
   if (f.type === "checkbox") return v ? "Да" : "Нет"
   if (f.type === "time" && v) return String(v).slice(0, 5)
+  if (Array.isArray(v)) return String(v.length) // например, фото к отзыву — сколько их
   return v == null ? "" : String(v)
 }
 
@@ -116,6 +124,7 @@ export function CrudTable({
   filters = [],
   defaultFilter = null,
   beforeSubmit,
+  onExport, // <--- ДОБАВЛЕНО
 }: Props) {
   const { data, loading, error, reload } = useApi(() => api<Row[]>(endpoint + listQuery), [endpoint, listQuery])
   const [query, setQuery] = useState("")
@@ -124,6 +133,7 @@ export function CrudTable({
   const [editing, setEditing] = useState<Row | "new" | null>(null)
   const [values, setValues] = useState<Record<string, Value>>({})
   const [errors, setErrors] = useState<Record<string, string>>({})
+  const [tried, setTried] = useState(false) // была попытка отправки — проверяем поля на лету
   const [formError, setFormError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [listError, setListError] = useState<ApiError | null>(null)
@@ -145,6 +155,7 @@ export function CrudTable({
 
   const open = (row: Row | "new") => {
     setEditing(row)
+    setTried(false)
     setErrors({})
     setFormError(null)
     setValues(
@@ -177,6 +188,11 @@ export function CrudTable({
   const submit = async (e: FormEvent) => {
     e.preventDefault()
     if (!editing) return
+    setTried(true)
+    const invalid = Object.fromEntries(
+      formFields.map((f) => [f.name, f.validate?.(values[f.name]) ?? ""]).filter(([, message]) => message),
+    )
+    if (Object.keys(invalid).length) return setErrors(invalid)
     setSaving(true)
     setFormError(null)
     // пустые дата/время/число — это «не задано»: серверу нужен null, а не ""
@@ -217,12 +233,15 @@ export function CrudTable({
     const v = values[f.name]
     const set = (next: Value) => {
       setValues({ ...values, [f.name]: next })
-      if (errors[f.name]) setErrors({ ...errors, [f.name]: "" })
+      const message = tried ? (f.validate?.(next) ?? "") : ""
+      if (errors[f.name] !== message) setErrors({ ...errors, [f.name]: message })
     }
     const id = `crud-${f.name}`
+    const cls = inputCls(Boolean(errors[f.name]))
+    const invalid = Boolean(errors[f.name]) || undefined
     switch (f.type) {
       case "textarea":
-        return <textarea id={id} rows={3} value={String(v ?? "")} onChange={(e) => set(e.target.value)} className={INPUT} />
+        return <textarea id={id} rows={3} value={String(v ?? "")} onChange={(e) => set(e.target.value)} aria-invalid={invalid} className={cls} />
       case "checkbox":
         return (
           <input id={id} type="checkbox" checked={Boolean(v)} onChange={(e) => set(e.target.checked)} className="size-5 accent-gold" />
@@ -233,7 +252,8 @@ export function CrudTable({
             id={id}
             value={String(v)}
             onChange={(e) => set(f.options!.find((o) => String(o.value) === e.target.value)!.value)}
-            className={INPUT}
+            aria-invalid={invalid}
+            className={cls}
           >
             {f.options!.map((o) => (
               <option key={String(o.value)} value={String(o.value)}>
@@ -243,7 +263,7 @@ export function CrudTable({
           </select>
         )
       case "multiselect": {
-        const selected = (v as number[]) ?? []
+        const selected = (v as (string | number)[]) ?? []
         return (
           <div className="grid grid-cols-2 gap-2">
             {f.options!.map((o) => (
@@ -251,9 +271,9 @@ export function CrudTable({
                 <input
                   type="checkbox"
                   className="size-4 accent-gold"
-                  checked={selected.includes(o.value as number)}
+                  checked={selected.includes(o.value as string | number)}
                   onChange={(e) =>
-                    set(e.target.checked ? [...selected, o.value as number] : selected.filter((x) => x !== o.value))
+                    set(e.target.checked ? [...selected, o.value as string | number] : selected.filter((x) => x !== o.value))
                   }
                 />
                 {o.label}
@@ -262,8 +282,10 @@ export function CrudTable({
           </div>
         )
       }
+      case "tel": // маска +7 (900) 123-45-67
+        return <input id={id} type="tel" value={maskPhone(String(v ?? ""))} onChange={(e) => set(maskPhone(e.target.value))} placeholder="+7 (900) 123-45-67" aria-invalid={invalid} className={cls} />
       default:
-        return <input id={id} type={f.type ?? "text"} value={String(v ?? "")} onChange={(e) => set(e.target.value)} className={INPUT} />
+        return <input id={id} type={f.type ?? "text"} value={String(v ?? "")} onChange={(e) => set(e.target.value)} aria-invalid={invalid} className={cls} />
     }
   }
 
@@ -286,7 +308,9 @@ export function CrudTable({
             />
           </label>
           {exportButton(
-            () => downloadCsv(`${title}.csv`, [fields.map((f) => f.label), ...rows.map((row) => fields.map((f) => text(f, row)))]),
+            () => onExport 
+              ? onExport(rows) 
+              : downloadCsv(`${title}.csv`, [fields.map((f) => f.label), ...rows.map((row) => fields.map((f) => text(f, row)))]),
             rows.length === 0,
           )}
           {canCreate && (

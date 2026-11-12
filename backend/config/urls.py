@@ -15,16 +15,19 @@ Including another URLconf
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 from django.conf import settings
+from django.urls import path, include
 from django.conf.urls.static import static
 from django.contrib import admin
-from django.urls import include, path
 from rest_framework.routers import SimpleRouter
 from rest_framework_simplejwt.views import TokenRefreshView
 
-from accounts.views import AdminUserViewSet, RegisterView, me, me_avatar, change_password, password_reset, password_reset_confirm, LoginView
+from accounts.views import (
+    AdminUserViewSet, LoginView, RegisterView, me, me_avatar, me_bonus,
+    change_password, password_reset, password_reset_confirm,
+)
 from bookings.views import (
     AdminBookingViewSet, AdminReviewViewSet, SalonClosureViewSet, ScheduleViewSet, TimeOffViewSet,
-    panel_counters, public_reviews, salon_load, today_stats,
+    panel_counters, public_reviews, salon_load, salon_stats, today_stats,
 )
 from catalog.views import PromotionViewSet
 
@@ -48,15 +51,17 @@ urlpatterns = [
     path("api/auth/refresh/", TokenRefreshView.as_view(), name="token-refresh"),
     path("api/auth/me/", me, name="me"),
     path("api/auth/me/avatar/", me_avatar, name="me-avatar"),
+    path("api/auth/me/bonus/", me_bonus, name="me-bonus"),
     path("api/auth/change-password/", change_password, name="change-password"),
     path("api/auth/password-reset/", password_reset, name="password-reset"),
     path("api/auth/password-reset/confirm/", password_reset_confirm, name="password-reset-confirm"),
     path("api/admin/load/", salon_load, name="salon-load"),
     path("api/admin/counters/", panel_counters, name="panel-counters"),
     path("api/admin/stats/today/", today_stats, name="today-stats"),
+    path("api/admin/stats/summary/", salon_stats, name="salon-stats"),
     path("api/reviews/", public_reviews, name="public-reviews"),
     path("api/admin/", include(admin_router.urls)),
-    
     path("api/finance/", include("finance.urls")),
+    path("api/support/", include("support.urls")),
 
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

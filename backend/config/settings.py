@@ -43,6 +43,7 @@ INSTALLED_APPS = [
     "bookings",
     "accounts",
     "finance",
+    'support',
     "django_celery_beat",
     "telegram_bot",
 ]

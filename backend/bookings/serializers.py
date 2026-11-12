@@ -6,8 +6,13 @@ from rest_framework import serializers
 
 from catalog.models import Employee, Service, price_on
 from config.images import RelativeImageField
-from .models import Booking, CancellationPolicy, Review, SalonClosure, Schedule, TimeOff, ACTIVE_STATUSES
-from .services import MAX_DAYS_AHEAD, closure_conflicts, conflict_label, get_free_slots, slot_taken
+from .models import (
+    ACTIVE_STATUSES, BonusOperation, Booking, CancellationPolicy, Review, SalonClosure, Schedule, TimeOff,
+)
+from .services import (
+    MAX_DAYS_AHEAD, apply_promo, client_busy, closure_conflicts, conflict_label, find_promo, get_free_slots,
+    slot_taken,
+)
 
 BLOCKED_MESSAGE = "Онлайн-запись недоступна. Свяжитесь с салоном."
 MAX_ACTIVE_GUEST_BOOKINGS = 3
@@ -27,6 +32,7 @@ class BaseBookingCreateSerializer(serializers.Serializer):
     service = serializers.PrimaryKeyRelatedField(queryset=Service.objects.filter(is_active=True))
     date = serializers.DateField()
     start_time = serializers.TimeField(input_formats=["%H:%M"])
+    comment = serializers.CharField(required=False, allow_blank=True, max_length=500)  # пожелания к визиту
 
     def validate_date(self, value):
         today = timezone.localdate()
@@ -47,6 +53,7 @@ class BaseBookingCreateSerializer(serializers.Serializer):
         slot = attrs["start_time"].strftime("%H:%M")
         if slot not in get_free_slots(employee.pk, service, attrs["date"]):
             raise serializers.ValidationError({"start_time": "Это время недоступно. Выберите другое."})
+
         return attrs
 
     def booking_fields(self, validated_data):
@@ -61,6 +68,7 @@ class BaseBookingCreateSerializer(serializers.Serializer):
             "end_time": (start + timedelta(minutes=service.duration_minutes)).time(),
             "status": "pending",  # ждёт подтверждения салоном, но время уже занято
             "price": price_on(service, validated_data["date"])[0],  # со скидкой по дате визита
+            "comment": validated_data.get("comment", "").strip(),
         }
 
 
@@ -72,20 +80,42 @@ class BookingSerializer(serializers.ModelSerializer):
     class Meta:
         model = Booking
         fields = '__all__'
-        read_only_fields = ("client", "end_time", "status", "created_at")
+        read_only_fields = ("client", "end_time", "status", "created_at", "promo_code")
 
 
 class BookingCreateSerializer(BaseBookingCreateSerializer):
+    promo_code = serializers.CharField(required=False, allow_blank=True, max_length=30)
+
     def validate(self, attrs):
-        profile = getattr(self.context["request"].user, "profile", None)
+        user = self.context["request"].user
+        profile = getattr(user, "profile", None)
         if profile and profile.is_blocked:  # чёрный список: без объяснений, нейтральный текст
             raise serializers.ValidationError(BLOCKED_MESSAGE)
-        return self.check_slot(attrs)
+
+        attrs = self.check_slot(attrs)
+
+        end = (
+            datetime.combine(attrs["date"], attrs["start_time"])
+            + timedelta(minutes=attrs["service"].duration_minutes)
+        ).time()
+        if client_busy(user.pk, attrs["date"], attrs["start_time"], end):  # нельзя быть у двух мастеров сразу
+            raise serializers.ValidationError({"start_time": "У вас уже есть запись на это время."})
+
+        promo, error = find_promo(attrs.pop("promo_code", ""), user)
+        if error:
+            raise serializers.ValidationError({"promo_code": error})
+        attrs["promo"] = promo
+        return attrs
 
     def create(self, validated_data):
+        fields = self.booking_fields(validated_data)
+        promo = validated_data.get("promo")
+        if promo:
+            fields["price"] = apply_promo(fields["price"], promo)
         return Booking.objects.create(
             client=self.context["request"].user,
-            **self.booking_fields(validated_data),
+            promo_code=promo,
+            **fields,
         )
 
 class AdminBookingSerializer(BookingSerializer):
@@ -187,17 +217,21 @@ class PublicReviewSerializer(serializers.ModelSerializer):
     employee_id = serializers.IntegerField(source="booking.employee_id", read_only=True)
     employee_name = serializers.CharField(source="booking.employee.full_name", read_only=True)
     service_name = serializers.CharField(source="booking.service.name", read_only=True)
+    photos = serializers.SerializerMethodField()
 
     class Meta:
         model = Review
         fields = ("id", "rating", "text", "reply", "created_at", "author", "author_avatar",
-                  "employee_id", "employee_name", "service_name")
+                  "employee_id", "employee_name", "service_name", "photos")
 
     def get_author(self, review):
         client = review.booking.client
         if client is None:
             return "Гость"
         return public_author(client)
+
+    def get_photos(self, review):
+        return [{"id": p.id, "url": p.image.url} for p in review.photos.all()]
 
 
 class AdminReviewSerializer(PublicReviewSerializer):
@@ -211,6 +245,7 @@ class AdminReviewSerializer(PublicReviewSerializer):
 
     def get_client_name(self, review):
         return review.booking.display_name
+
 
 class GuestBookingCreateSerializer(BaseBookingCreateSerializer):
     """Запись без регистрации: клиент указывает имя и телефон."""
@@ -254,3 +289,19 @@ class GuestBookingCreateSerializer(BaseBookingCreateSerializer):
             guest_phone=validated_data["guest_phone"],
             **self.booking_fields(validated_data),
         )
+
+
+class BonusOperationSerializer(serializers.ModelSerializer):
+    """Операция с баллами. Вручную сотрудник задаёт сумму (+ начислить, − списать) и комментарий."""
+    amount = serializers.IntegerField(min_value=-100000, max_value=100000)
+    comment = serializers.CharField(max_length=200)
+    visit_date = serializers.DateField(source="booking.date", read_only=True)  # у начислений за визит
+
+    class Meta:
+        model = BonusOperation
+        fields = ("id", "amount", "comment", "visit_date", "created_at")
+
+    def validate_amount(self, value):
+        if value == 0:
+            raise serializers.ValidationError("Укажите количество баллов.")
+        return value

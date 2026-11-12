@@ -1,16 +1,19 @@
+import { LanguageProvider, t, useLang } from "./lib/i18n"
 import {
   RouterProvider,
   createBrowserRouter,
   Outlet,
   NavLink,
 } from "react-router"
-import { Sparkles, Calendar, Menu, X, LogOut } from "lucide-react"
+import { Sparkles, Calendar, Menu, X, LogOut, Globe, Search } from "lucide-react"
 import { useState } from "react"
 import { HomePage } from "./pages/HomePage"
 import { MastersPage } from "./pages/MastersPage"
 import { ServicesPage } from "./pages/ServicesPage"
 import { ProfilePage } from "./pages/ProfilePage"
-import { BookingWizard } from "./components/BookingWizard"
+import { ComparePage } from "./pages/ComparePage"
+import { AboutPage } from "./pages/AboutPage"
+import { BookingWizard, type BookingPrefill } from "./components/BookingWizard"
 import { AuthModal } from "./components/AuthModal"
 import { RouteError } from "./components/RouteError"
 import { AuthProvider, useAuth } from "./auth/AuthContext"
@@ -20,16 +23,48 @@ import { BackToTopButton } from "./components/BackToTopButton"
 import { Avatar } from "./components/Avatar"
 import { VacanciesPage } from "./pages/VacanciesPage"
 import { PartnersPage } from "./pages/PartnersPage"
+import { CompareBar } from "./components/CompareBar"
+import { ConfirmDialog } from "./components/ConfirmDialog"
+import { SiteSearch } from "./components/SiteSearch"
+import { Toaster, toast } from "./components/Toast"
+import { formatDayMonth, formatTime, hoursUntil, relativeDay } from "./lib/format"
+import { BugReportModal } from "./components/BugReportModal"
 
 function Layout() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [bookingOpen, setBookingOpen] = useState(false)
-  const { user, logout } = useAuth()
+  const { user, logout, refreshUser } = useAuth()
   const [authOpen, setAuthOpen] = useState(false)
   const [resumeBooking, setResumeBooking] = useState(false)
+  const [bookingPrefill, setBookingPrefill] = useState<BookingPrefill | null>(null)
+  const [logoutOpen, setLogoutOpen] = useState(false)
+  const [bugReportOpen, setBugReportOpen] = useState(false)
+  const [searchOpen, setSearchOpen] = useState(false)
+
+  // запись в ближайшие 24 часа — золотая точка на аватаре и в мобильном меню
+  const next = user?.next_booking
+  const soon =
+    next && hoursUntil(next.date, next.start_time) <= 24
+      ? t("Запись {day} в {time}", { day: relativeDay(next.date), time: formatTime(next.start_time) })
+      : null
+  const dot = (
+    <span className="absolute top-0 right-0 size-3 rounded-full bg-gold ring-2 ring-pearl" aria-hidden="true" />
+  )
 
   // Запись только для вошедших: гостю сначала показываем вход
   const openBooking = () => setBookingOpen(true)
+
+  // «Записаться снова» из истории визитов
+  const rebook = (prefill: BookingPrefill) => {
+    setBookingPrefill(prefill)
+    openBooking()
+  }
+
+  const closeBooking = () => {
+    setBookingOpen(false)
+    setBookingPrefill(null)
+    if (user) refreshUser() // новая запись могла стать ближайшей
+  }
 
   return (
     <div className="min-h-screen flex flex-col relative overflow-x-clip bg-pearl text-foreground selection:bg-gold/20 selection:text-gold">
@@ -56,7 +91,7 @@ function Layout() {
                 }`
               }
             >
-              Главная
+              {t("Главная")}
             </NavLink>
             <NavLink
               to="/services"
@@ -66,7 +101,7 @@ function Layout() {
                 }`
               }
             >
-              Услуги
+              {t("Услуги")}
             </NavLink>
             <NavLink
               to="/masters"
@@ -76,7 +111,7 @@ function Layout() {
                 }`
               }
             >
-              Мастера
+              {t("Мастера")}
             </NavLink>
             <NavLink
               to="/reviews"
@@ -86,7 +121,17 @@ function Layout() {
                 }`
               }
             >
-              Отзывы
+              {t("Отзывы")}
+            </NavLink>
+            <NavLink
+              to="/about"
+              className={({ isActive }) =>
+                `text-sm font-medium whitespace-nowrap transition-colors hover:text-gold ${
+                  isActive ? "text-gold" : "text-muted-foreground"
+                }`
+              }
+            >
+              {t("О нас")}
             </NavLink>
             {user?.is_staff && (
               <NavLink
@@ -97,29 +142,40 @@ function Layout() {
                   }`
                 }
               >
-                Панель
+                {t("Панель")}
               </NavLink>
             )}
           </nav>
 
           {/* Действия — прижаты вправо */}
           <div className="hidden lg:flex items-center gap-3 xl:gap-4 justify-self-end">
+            <button
+              onClick={() => setSearchOpen(true)}
+              title={t("Поиск по услугам и мастерам")}
+              aria-label={t("Поиск")}
+              className="p-2 text-muted-foreground hover:text-gold transition-colors"
+            >
+              <Search className="size-5" />
+            </button>
+            <LangSwitch />
             {user ? (
               <>
                 <NavLink
                   to="/profile"
-                  title="Личный кабинет"
-                  className="rounded-full hover:ring-2 hover:ring-gold/40 transition-shadow"
+                  title={soon ?? t("Личный кабинет")}
+                  aria-label={soon ? `${t("Личный кабинет")}. ${soon}` : t("Личный кабинет")}
+                  className="relative rounded-full hover:ring-2 hover:ring-gold/40 transition-shadow"
                 >
                   <Avatar
                     src={user.avatar}
                     name={[user.first_name, user.last_name].filter(Boolean).join(" ") || user.username}
                     className="size-9 text-xs"
                   />
+                  {soon && dot}
                 </NavLink>
                 <button
-                  onClick={logout}
-                  title="Выйти"
+                  onClick={() => setLogoutOpen(true)}
+                  title={t("Выйти")}
                   className="p-2 text-muted-foreground hover:text-gold transition-colors"
                 >
                   <LogOut className="size-5" />
@@ -130,14 +186,14 @@ function Layout() {
                 onClick={() => setAuthOpen(true)}
                 className="text-sm font-medium text-muted-foreground hover:text-gold transition-colors whitespace-nowrap"
               >
-                Войти
+                {t("Войти")}
               </button>
             )}
             <button
               onClick={openBooking}
               className="bg-gold hover:bg-gold-hover text-white px-6 py-2.5 rounded-full text-sm font-medium transition-all shadow-sm hover:shadow-md whitespace-nowrap"
             >
-              Записаться
+              {t("Записаться")}
             </button>
           </div>
 
@@ -145,7 +201,7 @@ function Layout() {
           <button
             className="lg:hidden p-2 text-muted-foreground justify-self-end col-start-3"
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            aria-label="Меню"
+            aria-label={t("Меню")}
           >
             {mobileMenuOpen ? (
               <X className="size-6" />
@@ -158,40 +214,62 @@ function Layout() {
         {/* Mobile menu */}
         {mobileMenuOpen && (
           <div className="lg:hidden absolute top-20 left-0 w-full bg-pearl border-b border-rose-100 p-6 flex flex-col gap-4 shadow-lg">
+            <button
+              onClick={() => {
+                setSearchOpen(true)
+                setMobileMenuOpen(false)
+              }}
+              className="text-lg font-medium text-foreground text-left flex items-center gap-2"
+            >
+              <Search className="size-5" /> {t("Поиск")}
+            </button>
             <NavLink
               to="/"
               onClick={() => setMobileMenuOpen(false)}
               className="text-lg font-medium text-foreground"
             >
-              Главная
+              {t("Главная")}
             </NavLink>
             <NavLink
               to="/services"
               onClick={() => setMobileMenuOpen(false)}
               className="text-lg font-medium text-foreground"
             >
-              Услуги
+              {t("Услуги")}
             </NavLink>
             <NavLink
               to="/masters"
               onClick={() => setMobileMenuOpen(false)}
               className="text-lg font-medium text-foreground"
             >
-              Мастера
+              {t("Мастера")}
             </NavLink>
             <NavLink
               to="/reviews"
               onClick={() => setMobileMenuOpen(false)}
               className="text-lg font-medium text-foreground"
             >
-              Отзывы
+              {t("Отзывы")}
+            </NavLink>
+            <NavLink
+              to="/about"
+              onClick={() => setMobileMenuOpen(false)}
+              className="text-lg font-medium text-foreground"
+            >
+              {t("О нас")}
             </NavLink>
             <NavLink
               to="/profile"
               onClick={() => setMobileMenuOpen(false)}
-              className="text-lg font-medium text-foreground"
+              className="text-lg font-medium text-foreground flex items-center gap-2"
             >
-              Профиль
+              {t("Профиль")}
+              {soon && (
+                <span className="flex items-center gap-1.5 text-sm font-normal text-gold-dark">
+                  <span className="size-2.5 rounded-full bg-gold" aria-hidden="true" />
+                  {soon}
+                </span>
+              )}
             </NavLink>
             {user?.is_staff && (
               <NavLink
@@ -199,18 +277,19 @@ function Layout() {
                 onClick={() => setMobileMenuOpen(false)}
                 className="text-lg font-medium text-foreground"
               >
-                Панель
+                {t("Панель")}
               </NavLink>
             )}
+            <LangSwitch className="text-lg text-foreground" />
             {user ? (
               <button
                 onClick={() => {
-                  logout()
+                  setLogoutOpen(true)
                   setMobileMenuOpen(false)
                 }}
                 className="text-lg font-medium text-foreground text-left"
               >
-                Выйти
+                {t("Выйти")}
               </button>
             ) : (
               <button
@@ -220,7 +299,7 @@ function Layout() {
                 }}
                 className="text-lg font-medium text-foreground text-left"
               >
-                Войти
+                {t("Войти")}
               </button>
             )}
             <button
@@ -230,40 +309,60 @@ function Layout() {
               }}
               className="bg-gold text-white px-6 py-3 rounded-full text-center font-medium mt-4"
             >
-              Записаться
+              {t("Записаться")}
             </button>
           </div>
         )}
       </header>
 
       <main className="flex-1 flex flex-col">
-        <Outlet context={{ openBooking, openAuth: () => setAuthOpen(true) }} />
+        <Outlet context={{ openBooking, rebook, openAuth: () => setAuthOpen(true) }} />
       </main>
 
       {/* Footer */}
       <footer className="bg-rose-50 border-t border-rose-100 py-12 px-6">
-        <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-6">
-          <div className="text-xl font-serif text-gold flex items-center gap-2">
-            <Sparkles className="size-5" />
-            Allure
+        {/* Используем grid для идеального выравнивания: 1fr (лого) - 1fr (текст) - 1fr (ссылки) */}
+        <div className="max-w-7xl mx-auto flex flex-col md:grid md:grid-cols-3 items-center gap-6 md:gap-0">
+          
+          {/* Логотип (слева) */}
+          <div className="flex justify-center md:justify-self-start">
+            <div className="text-xl font-serif text-gold flex items-center gap-2">
+              <Sparkles className="size-5" />
+              Allure
+            </div>
           </div>
-          <p className="text-muted-foreground text-sm text-center md:text-left">
-            © 2026 Allure Beauty Salon. Все права защищены.
+
+          {/* Копирайт (строго по центру) */}
+          <p className="text-muted-foreground text-sm text-center md:justify-self-center">
+            {t("© 2026 Allure Beauty Salon. Все права защищены.")}
           </p>
-          <div className="flex gap-4">
+
+          {/* Ссылки (справа) */}
+          <div className="flex flex-wrap justify-center md:justify-self-end gap-x-4 gap-y-2 items-center">
+            <NavLink to="/about" className="text-sm text-muted-foreground hover:text-gold transition-colors">
+              {t("О нас")}
+            </NavLink>
             <NavLink to="/vacancies" className="text-sm text-muted-foreground hover:text-gold transition-colors">
-              Вакансии
+              {t("Вакансии")}
             </NavLink>
             <NavLink to="/partners" className="text-sm text-muted-foreground hover:text-gold transition-colors">
-              Партнёрам
+              {t("Партнёрам")}
             </NavLink>
             <span className="text-sm text-muted-foreground hover:text-gold cursor-pointer transition-colors">
-              ВКонтакте
+              {t("ВКонтакте")}
             </span>
             <span className="text-sm text-muted-foreground hover:text-gold cursor-pointer transition-colors">
               Telegram
             </span>
+
+            <button
+              onClick={() => setBugReportOpen(true)}
+              className="text-sm text-muted-foreground hover:text-rose-500 transition-colors border-l border-rose-200 pl-4 ml-2"
+            >
+              {t("Сообщить об ошибке")}
+            </button>
           </div>
+          
         </div>
       </footer>
 
@@ -279,16 +378,52 @@ function Layout() {
       <BackToTopButton />
 
       {/* Booking Modal */}
-      {bookingOpen && (
-        <BookingWizard
-          onClose={() => setBookingOpen(false)}
-          onLogin={() => {
-            setBookingOpen(false)
-            setResumeBooking(true)
-            setAuthOpen(true)
+      {bookingOpen &&
+        (user?.is_blocked ? (
+          <BlockedNotice onClose={closeBooking} />
+        ) : (
+          <BookingWizard
+            prefill={bookingPrefill}
+            onClose={closeBooking}
+            onLogin={() => {
+              setBookingOpen(false)
+              setResumeBooking(true)
+              setAuthOpen(true)
+            }}
+            onBooked={(b, { guest }) => {
+              closeBooking()
+              const text = t(
+                guest
+                  ? "Вы записаны: {service}, {day} в {time}. Салон свяжется с вами по телефону."
+                  : "Вы записаны: {service}, {day} в {time}. Запись ждёт подтверждения салона.",
+                {
+                  service: t(b.service_name),
+                  day: formatDayMonth(b.date),
+                  time: formatTime(b.start_time),
+                },
+              )
+              toast(text, guest ? undefined : { to: "/profile?tab=bookings", label: t("Мои записи") })
+            }}
+          />
+        ))}
+
+      {logoutOpen && (
+        <ConfirmDialog
+          title={t("Выйти из аккаунта?")}
+          confirmLabel={t("Выйти")}
+          onClose={() => setLogoutOpen(false)}
+          onConfirm={() => {
+            setLogoutOpen(false)
+            logout()
           }}
-        />
+        >
+          {t("Чтобы записаться или посмотреть свои записи, нужно будет войти снова.")}
+        </ConfirmDialog>
       )}
+
+      {searchOpen && <SiteSearch onClose={() => setSearchOpen(false)} />}
+      <CompareBar />
+      <Toaster />
 
       {/* Auth Modal */}
       {authOpen && (
@@ -306,6 +441,10 @@ function Layout() {
           }}
         />
       )}
+
+      {/* Bug Report Modal */}
+      {bugReportOpen && <BugReportModal onClose={() => setBugReportOpen(false)} />}
+      
     </div>
   )
 }
@@ -321,6 +460,8 @@ const router = createBrowserRouter([
       { path: "masters", Component: MastersPage },
       { path: "reviews", Component: ReviewsPage },
       { path: "profile", Component: ProfilePage },
+      { path: "compare", Component: ComparePage },
+      { path: "about", Component: AboutPage },
       { path: "panel", Component: PanelLayout, children: panelRoutes },
       { path: "vacancies", Component: VacanciesPage },
       { path: "partners", Component: PartnersPage },
@@ -331,8 +472,25 @@ const router = createBrowserRouter([
 export default function App() {
   return (
     <AuthProvider>
-      <RouterProvider router={router} />
+      <LanguageProvider>
+        <RouterProvider router={router} />
+      </LanguageProvider>
     </AuthProvider>
+  )
+}
+
+/** Переключатель языка RU / EN */
+function LangSwitch({ className = "text-sm" }: { className?: string }) {
+  const { lang, setLang } = useLang()
+  return (
+    <button
+      onClick={() => setLang(lang === "ru" ? "en" : "ru")}
+      title={t("Сменить язык")}
+      aria-label={t("Сменить язык")}
+      className={`inline-flex items-center gap-1.5 font-medium hover:text-gold transition-colors ${className} ${className.includes("text-foreground") ? "" : "text-muted-foreground"}`}
+    >
+      <Globe className="size-4" /> {lang === "ru" ? "EN" : "RU"}
+    </button>
   )
 }
 
@@ -346,15 +504,15 @@ function BlockedNotice({ onClose }: { onClose: () => void }) {
         className="bg-white w-full max-w-sm rounded-[2rem] shadow-2xl p-8 text-center space-y-4"
       >
         <h2 id="blocked-title" className="text-2xl font-serif text-foreground">
-          Запись недоступна
+          {t("Запись недоступна")}
         </h2>
-        <p className="text-muted-foreground">Онлайн-запись недоступна. Свяжитесь с салоном.</p>
+        <p className="text-muted-foreground">{t("Онлайн-запись недоступна. Свяжитесь с салоном.")}</p>
         <button
           onClick={onClose}
           autoFocus
           className="bg-gold hover:bg-gold-hover text-white px-8 py-3 rounded-full font-medium transition-colors"
         >
-          Понятно
+          {t("Понятно")}
         </button>
       </div>
     </div>

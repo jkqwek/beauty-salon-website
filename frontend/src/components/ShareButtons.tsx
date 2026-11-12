@@ -1,3 +1,4 @@
+import { t } from "@/lib/i18n"
 import { Share2 } from "lucide-react"
 
 interface ShareButtonsProps {
@@ -19,7 +20,7 @@ export function ShareButtons({ url, title }: ShareButtonsProps) {
         onClick={(e) => e.stopPropagation()}
         className="text-xs font-medium text-muted-foreground hover:text-gold transition-colors"
       >
-        ВКонтакте
+        {t("ВКонтакте")}
       </a>
       <span className="text-muted-foreground">·</span>
       <a

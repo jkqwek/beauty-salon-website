@@ -2,6 +2,7 @@ from django.urls import path
 from .views import (
     available_slots,
     create_booking,
+    create_guest_booking,
     booking_history,
     cancel_booking,
     reschedule_booking,
@@ -14,7 +15,8 @@ from .views import (
     price_view,
     leave_review,
     upcoming_closures,
-    create_guest_booking,
+    top_services,
+    promo_check,
 )
 
 urlpatterns = [
@@ -33,4 +35,6 @@ urlpatterns = [
     path("<int:booking_id>/review/", leave_review, name="leave-review"),
     path("closures/upcoming/", upcoming_closures, name="upcoming-closures"),
     path("guest/", create_guest_booking, name="create-guest-booking"),
+    path("top-services/", top_services, name="top-services"),
+    path("promo/", promo_check, name="promo-check"),
 ]

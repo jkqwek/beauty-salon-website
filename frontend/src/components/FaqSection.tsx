@@ -1,3 +1,4 @@
+import { t } from "@/lib/i18n"
 import { useState } from "react"
 import { ChevronDown } from "lucide-react"
 
@@ -10,7 +11,7 @@ const FAQ = [
   },
   {
     q: "На сколько дней вперёд можно записаться?",
-    a: `Запись открыта на ${MAX_DAYS_AHEAD} дней вперёд. Свободное время мастера показывается на этапе выбора даты.`,
+    a: "Запись открыта на {days} дней вперёд. Свободное время мастера показывается на этапе выбора даты.",
   },
   {
     q: "Как отменить или перенести запись?",
@@ -42,7 +43,7 @@ export function FaqSection() {
   return (
     <section className="max-w-3xl mx-auto px-6 py-16 w-full">
       <h2 className="text-3xl md:text-4xl font-serif text-foreground mb-10 text-center">
-        Частые вопросы
+        {t("Частые вопросы")}
       </h2>
 
       <div className="flex flex-col gap-4">
@@ -58,7 +59,7 @@ export function FaqSection() {
                 aria-expanded={isOpen}
                 className="w-full flex items-center justify-between gap-4 text-left px-6 py-5 font-medium text-foreground hover:text-gold transition-colors"
               >
-                <span>{item.q}</span>
+                <span>{t(item.q)}</span>
                 <ChevronDown
                   className={`size-5 shrink-0 text-gold transition-transform duration-300 ${
                     isOpen ? "rotate-180" : ""
@@ -72,7 +73,7 @@ export function FaqSection() {
                 }`}
               >
                 <div className="overflow-hidden">
-                  <p className="px-6 pb-5 text-muted-foreground">{item.a}</p>
+                  <p className="px-6 pb-5 text-muted-foreground">{t(item.a, { days: MAX_DAYS_AHEAD })}</p>
                 </div>
               </div>
             </div>

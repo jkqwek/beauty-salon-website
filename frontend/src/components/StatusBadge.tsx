@@ -1,3 +1,4 @@
+import { t } from "@/lib/i18n"
 import { CalendarCheck, Check, Clock, X, type LucideIcon } from "lucide-react"
 import type { Booking } from "@/api/api"
 
@@ -21,7 +22,7 @@ export function StatusBadge({ status }: { status: Status }) {
   const { label, cls, icon: Icon } = BOOKING_STATUS[status]
   return (
     <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full border text-xs font-medium whitespace-nowrap ${cls}`}>
-      <Icon className="size-3.5" /> {label}
+      <Icon className="size-3.5" /> {t(label)}
     </span>
   )
 }

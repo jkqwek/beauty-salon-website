@@ -12,6 +12,8 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
+  Download,
+  Gift,
   LayoutGrid,
   MessageSquareText,
   Package,
@@ -23,16 +25,30 @@ import {
   UserCog,
   Users,
   Wallet,
+  X,
 } from "lucide-react"
 import { useAuth } from "@/auth/AuthContext"
-import { adminApi, bookingApi, catalogApi, type Booking, type Employee, type PanelCounters, type SalonLoad } from "@/api/api"
-import { toApiError, type ApiError } from "@/api/client"
+import {
+  adminApi,
+  bookingApi,
+  catalogApi,
+  SERVICE_TAGS,
+  type AdminBooking,
+  type Booking,
+  type Employee,
+  type PanelCounters,
+  type ReviewPhoto,
+  type SalonLoad,
+} from "@/api/api"
+// ДОБАВЛЕН ИМПОРТ tokens
+import { toApiError, tokens, type ApiError } from "@/api/client"
 import { useApi } from "@/api/useApi"
 import {
   formatDate,
   formatDayHeader,
   formatPrice,
   formatTime,
+  maskPhone,
   periodLabel,
   periodRange,
   plural,
@@ -45,10 +61,15 @@ import { masterPhoto } from "@/lib/photos"
 import { Avatar } from "../components/Avatar"
 import { AvatarCropper } from "../components/AvatarCropper"
 import { CrudTable, INPUT, downloadCsv, exportButton, type Option, type Row, type RowActions, type Value } from "../components/CrudTable"
+import { ConfirmDialog } from "../components/ConfirmDialog"
 import { ErrorMessage } from "../components/ErrorMessage"
+import { validators } from "@/lib/validators"
+import { ModalShell } from "../components/ClientModals"
+import { PhotoLightbox } from "../components/ReviewCard"
 import { BOOKING_STATUS, COUNTERS_CHANGED } from "../components/StatusBadge"
 import { PriceTag } from "../components/PriceTag"
 import { StarRating } from "../components/StarRating"
+import { TagChips } from "../components/TagChips"
 import { EmployeePage } from "./EmployeePage"
 import { DashboardPage } from "./DashboardPage"
 import { FinancePage } from "./FinancePage"
@@ -56,6 +77,11 @@ import { FinancePage } from "./FinancePage"
 const DAYS: Option[] = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"].map(
   (label, value) => ({ value, label }),
 )
+
+// проверки полей до отправки формы (сервер всё равно перепроверит)
+const required = (v: Value) => (String(v ?? "").trim() ? null : "Заполните это поле")
+const positive = (v: Value) => (Number(v) > 0 ? null : "Должно быть больше нуля")
+const phone = (v: Value) => validators.phone(String(v ?? ""))
 
 const badge = (text: string, cls: string) => (
   <span className={`inline-block px-3 py-1 rounded-full border text-xs font-medium whitespace-nowrap ${cls}`}>{text}</span>
@@ -138,6 +164,7 @@ function BookingsSection() {
   const { data, error, reload } = useApi(() => adminApi.bookings(...range), [range[0], range[1]])
   const employees = useApi(catalogApi.employees)
   const [actionError, setActionError] = useState<ApiError | null>(null)
+  const [cancelling, setCancelling] = useState<AdminBooking | null>(null)
 
   const setStatus = async (id: number, status: Booking["status"]) => {
     setActionError(null)
@@ -277,7 +304,7 @@ function BookingsSection() {
                       <td className="p-4 whitespace-nowrap">{b.price ? formatPrice(b.price) : "—"}</td>
                       <td className="p-4">
                         <div className="flex flex-wrap items-center gap-2">
-                          <StatusSelect status={b.status} onChange={(s) => setStatus(b.id, s)} />
+                          <StatusSelect status={b.status} onChange={(s) => (s === "cancelled" ? setCancelling(b) : setStatus(b.id, s))} />
                           {b.status === "pending" && (
                             <button
                               onClick={() => setStatus(b.id, "confirmed")}
@@ -294,6 +321,28 @@ function BookingsSection() {
             ))}
           </table>
         </div>
+      )}
+
+      {cancelling && (
+        <ConfirmDialog
+          title="Отменить запись?"
+          confirmLabel="Отменить запись"
+          cancelLabel="Не отменять"
+          danger
+          onConfirm={async () => {
+            await setStatus(cancelling.id, "cancelled")
+            setCancelling(null)
+          }}
+          onClose={() => setCancelling(null)}
+        >
+          <p className="font-medium text-foreground">{cancelling.client_name}</p>
+          <p>
+            {cancelling.service_name} · {cancelling.employee_name}
+            <br />
+            {formatDate(cancelling.date)}, {formatTime(cancelling.start_time)}
+          </p>
+          <p className="text-sm mt-3">Время мастера освободится для других клиентов.</p>
+        </ConfirmDialog>
       )}
     </div>
   )
@@ -402,6 +451,134 @@ function StarToggle({ row, act }: { row: Row; act: RowActions }) {
   )
 }
 
+/** Баллы клиента в таблице; по клику — история и ручное начисление или списание */
+function BonusCell({ row, act }: { row: Row; act: RowActions }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <>
+      <button
+        onClick={() => setOpen(true)}
+        title="История, начислить или списать"
+        className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-gold/30 bg-gold/10 text-gold-dark text-sm font-medium hover:bg-gold/20 transition-colors whitespace-nowrap"
+      >
+        <Gift className="size-3.5" /> {row.bonus_balance}
+      </button>
+      {open && (
+        <BonusModal
+          row={row}
+          onClose={(changed) => {
+            setOpen(false)
+            if (changed) act.reload()
+          }}
+        />
+      )}
+    </>
+  )
+}
+
+function BonusModal({ row, onClose }: { row: Row; onClose: (changed: boolean) => void }) {
+  const summary = useApi(() => adminApi.bonus(row.id))
+  const [spend, setSpend] = useState(true)
+  const [amount, setAmount] = useState("")
+  const [comment, setComment] = useState("")
+  const [error, setError] = useState<ApiError | string | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [changed, setChanged] = useState(false)
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault()
+    const points = Number(amount)
+    if (!Number.isInteger(points) || points <= 0) return setError("Укажите количество баллов — целое число больше нуля.")
+    if (!comment.trim()) return setError("Добавьте комментарий, например «Оплата визита 12.10».")
+    setSaving(true)
+    setError(null)
+    try {
+      await adminApi.addBonus(row.id, { amount: spend ? -points : points, comment: comment.trim() })
+      setAmount("")
+      setComment("")
+      setChanged(true)
+      summary.reload()
+    } catch (err) {
+      setError(toApiError(err))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <ModalShell title={`Баллы: ${clientName(row)}`} onClose={() => onClose(changed)}>
+      <p className="text-3xl font-serif text-foreground">
+        {summary.data ? plural(summary.data.balance, ["балл", "балла", "баллов"]) : "…"}
+      </p>
+
+      <form onSubmit={submit} className="bg-white rounded-2xl border border-rose-100 p-4 space-y-3">
+        <div className="flex gap-2">
+          {[true, false].map((value) => (
+            <button
+              key={String(value)}
+              type="button"
+              onClick={() => setSpend(value)}
+              aria-pressed={spend === value}
+              className={chipCls(spend === value)}
+            >
+              {value ? "Списать" : "Начислить"}
+            </button>
+          ))}
+        </div>
+        <input
+          type="number"
+          min={1}
+          step={1}
+          inputMode="numeric"
+          value={amount}
+          onChange={(e) => setAmount(e.target.value)}
+          placeholder="Сколько баллов"
+          aria-label="Сколько баллов"
+          className={INPUT}
+        />
+        <input
+          value={comment}
+          onChange={(e) => setComment(e.target.value)}
+          maxLength={200}
+          placeholder={spend ? "Оплата визита 12.10" : "Подарок ко дню рождения"}
+          aria-label="Комментарий"
+          className={INPUT}
+        />
+        {error && <ErrorMessage error={error} />}
+        <button
+          type="submit"
+          disabled={saving}
+          className="w-full bg-gold hover:bg-gold-hover text-white py-3 rounded-full font-medium transition-colors disabled:opacity-50"
+        >
+          {saving ? "Сохраняем…" : spend ? "Списать баллы" : "Начислить баллы"}
+        </button>
+      </form>
+
+      <div>
+        <h3 className="font-medium text-foreground mb-2">История</h3>
+        {summary.error && <ErrorMessage error={summary.error} onRetry={summary.reload} />}
+        {summary.data?.operations.length === 0 && <p className="text-sm text-muted-foreground">Операций пока нет.</p>}
+        <ul className="divide-y divide-rose-100">
+          {summary.data?.operations.map((op) => (
+            <li key={op.id} className="flex items-center justify-between gap-4 py-2 text-sm">
+              <span>
+                {op.comment}
+                <span className="block text-xs text-muted-foreground">
+                  {formatDate((op.visit_date ?? op.created_at).slice(0, 10))}
+                </span>
+              </span>
+              <span className={`font-medium whitespace-nowrap ${op.amount > 0 ? "text-green-700" : "text-rose-600"}`}>
+                {op.amount > 0 ? "+" : "−"}
+                {Math.abs(op.amount)}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </ModalShell>
+  )
+}
+
 function ClientsSection() {
   const { user } = useAuth()
   return (
@@ -446,8 +623,8 @@ function ClientsSection() {
           ),
         },
         { name: "last_name", label: "Фамилия", inTable: false },
-        { name: "phone", label: "Телефон", render: (r) => <span className="whitespace-nowrap">{r.phone || "—"}</span> },
-        { name: "email", label: "Email", inTable: false },
+        { name: "phone", label: "Телефон", type: "tel", validate: phone, render: (r) => <span className="whitespace-nowrap">{maskPhone(r.phone ?? "") || "—"}</span> },
+        { name: "email", label: "Email", inTable: false, validate: (v) => (v ? validators.email(String(v)) : null) },
         {
           name: "is_staff",
           label: "Статус",
@@ -464,6 +641,7 @@ function ClientsSection() {
         { name: "visits", label: "Визитов", inForm: false },
         { name: "last_visit", label: "Последний визит", inForm: false, render: (r) => (r.last_visit ? formatDate(r.last_visit) : "—") },
         { name: "total_spent", label: "Потрачено", inForm: false, render: (r) => (r.total_spent ? formatPrice(r.total_spent) : "—") },
+        { name: "bonus_balance", label: "Баллы", inForm: false, render: (r, act) => <BonusCell row={r} act={act} /> },
         { name: "master", label: "Карточка мастера", inForm: false, inTable: false },
         { name: "username", label: "Логин", inForm: false, inTable: false },
         { name: "note", label: "Внутренний комментарий", type: "textarea", render: (r) => r.note && <span className="text-rose-700">{r.note}</span> },
@@ -618,15 +796,23 @@ function ServicesSection() {
           rowClass={(r) => (r.is_active ? "" : "opacity-50")}
           fields={[
             { name: "image", label: "Фото", inForm: false, render: (r, act) => <ServiceImageCell row={r} act={act} /> },
-            { name: "name", label: "Название" },
+            { name: "name", label: "Название", validate: required },
             { name: "category", label: "Категория" },
             {
               name: "price",
               label: "Цена",
               type: "number",
+              validate: positive,
               render: (r) => <PriceTag base={r.price} price={r.price_today} discount={r.discount_percent} className="whitespace-nowrap" />,
             },
-            { name: "duration_minutes", label: "Минут", type: "number" },
+            { name: "duration_minutes", label: "Минут", type: "number", validate: positive },
+            {
+              name: "tags",
+              label: "Теги",
+              type: "multiselect",
+              options: Object.entries(SERVICE_TAGS).map(([value, label]) => ({ value, label })),
+              render: (r) => (r.tags.length ? <TagChips tags={r.tags} /> : "—"),
+            },
             { name: "description", label: "Описание", type: "textarea", inTable: false },
             { name: "is_active", label: "Активна (снять — временно скрыть)", type: "checkbox", default: true },
           ]}
@@ -671,7 +857,69 @@ function ModerationCell({ row, act }: { row: Row; act: RowActions }) {
   )
 }
 
+/** Фото к отзыву: открыть крупно или удалить неуместное (текст отзыва остаётся) */
+function ReviewPhotosCell({ row, act }: { row: Row; act: RowActions }) {
+  const [opened, setOpened] = useState<string | null>(null)
+  const photos: ReviewPhoto[] = row.photos
+  if (!photos.length) return <>—</>
+  const remove = (photo: ReviewPhoto) => {
+    if (!confirm("Удалить это фото? Вернуть его будет нельзя.")) return
+    act.run(() => adminApi.deleteReviewPhoto(row.id, photo.id))
+  }
+  return (
+    <div className="flex gap-2">
+      {photos.map((p) => (
+        <div key={p.id} className="relative size-14">
+          <button onClick={() => setOpened(p.url)} aria-label="Открыть фото" className="size-full rounded-lg overflow-hidden border border-rose-100 cursor-zoom-in">
+            <img src={p.url} alt="" className="size-full object-cover" />
+          </button>
+          <button
+            onClick={() => remove(p)}
+            title="Удалить фото"
+            aria-label="Удалить фото"
+            className="absolute -top-2 -right-2 p-1 rounded-full bg-white border border-rose-200 text-muted-foreground hover:text-rose-600 shadow-sm"
+          >
+            <X className="size-3" />
+          </button>
+        </div>
+      ))}
+      {opened && <PhotoLightbox src={opened} onClose={() => setOpened(null)} />}
+    </div>
+  )
+}
+
 function ReviewsSection() {
+  const handleExport = async () => {
+    try {
+      const token = tokens.access;
+      
+      const response = await fetch('/api/admin/reviews/export/', {
+        method: 'GET',
+        headers: {
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+        },
+      });
+      
+      if (!response.ok) {
+        console.error(`Ошибка сервера: ${response.status} ${response.statusText}`);
+        throw new Error('Ошибка при скачивании');
+      }
+      
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Отзывы_${new Date().toISOString().split('T')[0]}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error("Детали ошибки экспорта:", error);
+      alert("Не удалось скачать файл.");
+    }
+  };
+
   return (
     <CrudTable
       title="Отзывы"
@@ -679,6 +927,7 @@ function ReviewsSection() {
       canCreate={false}
       canDelete={false}
       defaultFilter={0}
+      onExport={handleExport}
       filters={[
         { label: "Новые", test: (r) => r.status === "new" },
         { label: "Опубликованные", test: (r) => r.status === "published" },
@@ -710,6 +959,7 @@ function ReviewsSection() {
           ),
         },
         { name: "text", label: "Текст", inForm: false, render: (r) => <p className="min-w-48 max-w-xs whitespace-pre-line">{r.text}</p> },
+        { name: "photos", label: "Фото", inForm: false, render: (r, act) => <ReviewPhotosCell row={r} act={act} /> },
         { name: "status", label: "Статус", type: "select", options: REVIEW_STATUS, render: (r, act) => <ModerationCell row={r} act={act} /> },
         {
           name: "reply",
@@ -798,7 +1048,7 @@ function PromotionsAdminSection() {
       endpoint="/admin/promotions/"
       rowClass={(r) => (!r.is_active || r.date_to < today ? "opacity-50" : "")}
       fields={[
-        { name: "name", label: "Название" },
+        { name: "name", label: "Название", validate: required },
         {
           name: "discount_percent",
           label: "Скидка, %",
@@ -885,9 +1135,9 @@ function MastersSection() {
       rowClass={(r) => (r.is_active ? "" : "opacity-50")}
       fields={[
         { name: "photo", label: "Фото", inForm: false, render: (r, act) => <MasterPhotoCell row={r} act={act} /> },
-        { name: "full_name", label: "ФИО" },
+        { name: "full_name", label: "ФИО", validate: required },
         { name: "specialization", label: "Специализация" },
-        { name: "phone", label: "Телефон" },
+        { name: "phone", label: "Телефон", type: "tel", validate: phone, render: (r) => <span className="whitespace-nowrap">{maskPhone(r.phone ?? "") || "—"}</span> },
         { name: "services", label: "Услуги", type: "multiselect", options: services.data.map((s) => ({ value: s.id, label: s.name })) },
         { name: "user", label: "Аккаунт сотрудника (для «Моего кабинета»)", type: "select", options: accounts },
         { name: "is_active", label: "Работает", type: "checkbox", default: true },
@@ -939,7 +1189,7 @@ function StockSection() {
       endpoint="/finance/stock/"
       rowClass={(r) => (isLow(r) ? "bg-rose-50/60" : "")}
       fields={[
-        { name: "name", label: "Название" },
+        { name: "name", label: "Название", validate: required },
         {
           name: "category",
           label: "Категория",

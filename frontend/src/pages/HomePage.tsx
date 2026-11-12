@@ -1,3 +1,4 @@
+import { t } from "@/lib/i18n"
 import { useEffect, useState } from "react"
 import { NavLink, useOutletContext } from "react-router"
 import heroPhoto from "@/imports/back.png"
@@ -69,15 +70,24 @@ function iconForService(service: Service): LucideIcon {
 }
 
 function masterName(m: Master): string {
-  return m.name || m.full_name || "Без имени"
+  return t(m.name || m.full_name || "Без имени")
 }
 
 function masterRole(m: Master): string {
-  return m.role || m.position || m.specialization || ""
+  return t(m.role || m.position || m.specialization || "")
 }
 
 function masterPhoto(m: Master): string | undefined {
   return m.photo || m.image || undefined
+}
+
+/** Специализации мастера: «Барбер, массажист» -> ["Барбер", "Массажист"] — фильтр находит его по каждой */
+function specialties(m: Master): string[] {
+  return (m.role || m.position || m.specialization || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map((s) => s[0].toUpperCase() + s.slice(1))
 }
 
 // Замените картинки на настоящие фото работ из @/imports/works/..., когда они будут
@@ -97,6 +107,22 @@ export function HomePage() {
   const [masters, setMasters] = useState<Master[]>([])
   const [loadingServices, setLoadingServices] = useState(true)
   const [loadingMasters, setLoadingMasters] = useState(true)
+  const [specialty, setSpecialty] = useState<string | null>(null) // ключ в нижнем регистре, null — все
+
+  // кнопки фильтра: уникальные специализации без учёта регистра, в порядке появления
+  const specialtyOptions = new Map<string, string>()
+  for (const m of masters)
+    for (const s of specialties(m))
+      if (!specialtyOptions.has(s.toLowerCase())) specialtyOptions.set(s.toLowerCase(), s)
+  const shownMasters = specialty
+    ? masters.filter((m) => specialties(m).some((s) => s.toLowerCase() === specialty))
+    : masters
+  const chipCls = (active: boolean) =>
+    `px-5 py-2 rounded-full text-sm font-medium border transition-colors ${
+      active
+        ? "bg-gold text-white border-gold shadow-sm"
+        : "bg-white text-muted-foreground border-rose-200 hover:border-gold/50 hover:text-gold"
+    }`
 
   useEffect(() => {
     let alive = true
@@ -135,7 +161,7 @@ export function HomePage() {
         <div className="absolute inset-0 z-0">
           <ImageWithFallback
             src={heroPhoto}
-            alt="Роскошный интерьер салона Allure с мягким светом и элегантной мебелью"
+            alt={t("Роскошный интерьер салона Allure с мягким светом и элегантной мебелью")}
             className="w-full h-full object-cover blur-[2px]"
           />
           <div className="absolute inset-0 bg-black/55"></div>
@@ -145,21 +171,20 @@ export function HomePage() {
         <div className="relative z-10 max-w-4xl mx-auto px-6 text-center">
           {/* на тёмной подложке нужен светлый text-gold, а не gold-dark */}
           <span className="inline-block px-4 py-1 mb-6 rounded-full border border-gold/70 text-gold font-medium text-sm tracking-widest uppercase">
-            Добро пожаловать в Allure
+            {t("Добро пожаловать в Allure")}
           </span>
           <h1 className="text-[clamp(2.5rem,6vw,4.5rem)] font-serif text-white mb-6 leading-[1.1] tracking-tight">
-            Перезагрузка <br />
-            <span className="text-gold-gradient italic">за один визит.</span>
+            {t("Перезагрузка")} <br />
+            <span className="text-gold-gradient italic">{t("за один визит.")}</span>
           </h1>
           <p className="text-lg md:text-xl text-white/90 max-w-2xl mx-auto mb-10 font-medium leading-relaxed text-pretty">
-            Погрузитесь в мир изысканного ухода — в спокойном современном
-            пространстве, созданном исключительно для вашего благополучия.
+            {t("Погрузитесь в мир изысканного ухода — в спокойном современном пространстве, созданном исключительно для вашего благополучия.")}
           </p>
           <button
             onClick={openBooking}
             className="bg-gradient-to-br from-gold to-gold-hover hover:brightness-105 text-white px-10 py-4 rounded-full text-lg font-semibold hover:shadow-[0_10px_30px_rgba(212,175,55,0.3)] hover:-translate-y-1 transition-all duration-300"
           >
-            Записаться
+            {t("Записаться")}
           </button>
         </div>
       </section>
@@ -173,17 +198,16 @@ export function HomePage() {
           <Reveal>
             <div className="flex flex-col md:flex-row items-end justify-between mb-12 md:mb-16 gap-6">
               <div>
-                <h2 className="section-title mb-4">Наши услуги</h2>
+                <h2 className="section-title mb-4">{t("Наши услуги")}</h2>
                 <p className="section-lead">
-                  Тщательно подобранные процедуры, которые подчеркнут вашу
-                  естественную красоту и подарят полное расслабление.
+                  {t("Тщательно подобранные процедуры, которые подчеркнут вашу естественную красоту и подарят полное расслабление.")}
                 </p>
               </div>
               <NavLink
                 to="/services"
                 className="text-gold-dark font-medium flex items-center gap-2 hover:gap-3 transition-all hover:text-gold-hover"
               >
-                Все услуги <ArrowRight className="size-4" />
+                {t("Все услуги")} <ArrowRight className="size-4" />
               </NavLink>
             </div>
           </Reveal>
@@ -203,7 +227,7 @@ export function HomePage() {
             </div>
           ) : services.length === 0 ? (
             <p className="text-center text-muted-foreground py-8">
-              Услуги скоро появятся.
+              {t("Услуги скоро появятся.")}
             </p>
           ) : (
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-8">
@@ -217,7 +241,7 @@ export function HomePage() {
                         <Icon className="size-8 stroke-[1.5]" />
                       </div>
                       <h3 className="text-xl font-serif text-foreground mb-2">
-                        {service.name}
+                        {t(service.name)}
                       </h3>
                       {service.description && (
                         <p className="text-sm text-muted-foreground">
@@ -238,12 +262,29 @@ export function HomePage() {
         <div className="max-w-7xl mx-auto px-6">
           <Reveal>
             <div className="text-center mb-12 md:mb-16">
-              <h2 className="section-title mb-4">Наши мастера</h2>
+              <h2 className="section-title mb-4">{t("Наши мастера")}</h2>
               <p className="section-lead mx-auto">
-                Команда титулованных профессионалов, готовых воплотить вашу идею.
+                {t("Команда титулованных профессионалов, готовых воплотить вашу идею.")}
               </p>
             </div>
           </Reveal>
+
+          {masters.length >= 2 && specialtyOptions.size >= 2 && (
+            <div
+              className="flex flex-wrap justify-center gap-2 -mt-8 mb-12"
+              role="group"
+              aria-label={t("Специализация мастера")}
+            >
+              <button onClick={() => setSpecialty(null)} aria-pressed={specialty === null} className={chipCls(specialty === null)}>
+                {t("Все")}
+              </button>
+              {[...specialtyOptions].map(([key, label]) => (
+                <button key={key} onClick={() => setSpecialty(key)} aria-pressed={specialty === key} className={chipCls(specialty === key)}>
+                  {t(label)}
+                </button>
+              ))}
+            </div>
+          )}
 
           {/* карусель оборачиваем целиком: карточки лежат в горизонтальной прокрутке */}
           <Reveal delay={100}>
@@ -262,11 +303,11 @@ export function HomePage() {
               </div>
             ) : masters.length === 0 ? (
               <p className="text-center text-muted-foreground py-8">
-                Информация о мастерах скоро появится.
+                {t("Информация о мастерах скоро появится.")}
               </p>
             ) : (
               <div className="flex overflow-x-auto pb-10 -mx-6 px-6 gap-8 snap-x hide-scrollbar">
-                {masters.map((master) => {
+                {shownMasters.map((master) => {
                   const photo = masterPhoto(master)
                   return (
                     <div
@@ -308,7 +349,7 @@ export function HomePage() {
               to="/masters"
               className="inline-block px-8 py-3 rounded-full border-2 border-gold text-gold-dark font-medium hover:bg-gold hover:text-white transition-colors"
             >
-              Вся команда
+              {t("Вся команда")}
             </NavLink>
           </div>
         </div>
@@ -319,9 +360,9 @@ export function HomePage() {
         <div className="max-w-7xl mx-auto px-6">
           <Reveal>
             <div className="text-center mb-12 md:mb-16">
-              <h2 className="section-title mb-4">Работы наших мастеров</h2>
+              <h2 className="section-title mb-4">{t("Работы наших мастеров")}</h2>
               <p className="section-lead mx-auto">
-                Несколько историй, которыми мы гордимся.
+                {t("Несколько историй, которыми мы гордимся.")}
               </p>
             </div>
           </Reveal>

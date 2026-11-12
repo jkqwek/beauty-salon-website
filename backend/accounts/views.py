@@ -3,21 +3,28 @@ from django.utils.encoding import force_bytes, force_str
 from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 from .serializers import (ChangePasswordSerializer, PasswordResetRequestSerializer,
                           PasswordResetConfirmSerializer)
+import re
 from datetime import timedelta
 
 from django.contrib.auth import get_user_model
-from django.db.models import Count, Max, Q, Sum
+from django.db.models import Count, Max, OuterRef, Q, Subquery, Sum
+from django.db.models.functions import Coalesce
+from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import generics, mixins, permissions, viewsets
-from rest_framework.decorators import api_view, parser_classes, permission_classes, throttle_classes
+from rest_framework.decorators import action, api_view, parser_classes, permission_classes, throttle_classes
 from rest_framework.throttling import AnonRateThrottle, ScopedRateThrottle
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework.exceptions import ValidationError
 from rest_framework.parsers import MultiPartParser
 from rest_framework.response import Response
 
+from bookings.models import BONUS_PERCENT, REFERRAL_BONUS, REVIEW_BONUS, BonusOperation, Booking
+from bookings.serializers import BonusOperationSerializer, BookingSerializer
+from bookings.services import bonus_balance, loyalty, ref_code
 from catalog.permissions import IsAdminUser
 from config.images import delete_image, save_image
+from config.pagination import OptionalPagination
 from .models import ClientProfile
 from .serializers import REGULAR_CANDIDATE_DAYS, AdminUserSerializer, MeSerializer, RegisterSerializer
 from django.contrib.auth.password_validation import validate_password
@@ -61,23 +68,91 @@ def me_avatar(request):
     return Response(MeSerializer(request.user, context={"request": request}).data)
 
 
+def _bonus_summary(user):
+    operations = user.bonus_operations.select_related("booking")
+    return {"balance": bonus_balance(user), "percent": BONUS_PERCENT, "review_bonus": REVIEW_BONUS,
+            "level": loyalty(user),
+            "referral": {"code": ref_code(user), "bonus": REFERRAL_BONUS, "invited": user.referrals.count()},
+            "operations": BonusOperationSerializer(operations, many=True).data}
+
+
+@api_view(["GET"])
+@permission_classes([permissions.IsAuthenticated])
+def me_bonus(request):
+    """Свои бонусные баллы: баланс, правило начисления и история операций."""
+    return Response(_bonus_summary(request.user))
+
+
+def _phone_q(digits):
+    """Фрагмент номера: телефоны хранятся как +7900…, а ищут часто как 8 900…"""
+    q = Q(profile__phone__contains=digits)
+    if digits[0] == "8":
+        q |= Q(profile__phone__contains="7" + digits[1:])
+    return q
+
+
+def _search_q(text):
+    """Поиск клиента по имени, логину, email или телефону (8 900…, +7 (900)… — любое написание)."""
+    if re.fullmatch(r"\+?[\d\s()-]+", text) and len(re.sub(r"\D", "", text)) >= 3:  # запрос похож на номер
+        return _phone_q(re.sub(r"\D", "", text)) | Q(username__icontains=text)
+    q = Q()
+    for word in text.split():
+        part = (Q(username__icontains=word) | Q(first_name__icontains=word)
+                | Q(last_name__icontains=word) | Q(email__icontains=word))
+        digits = re.sub(r"\D", "", word)
+        if len(digits) >= 3:
+            part |= _phone_q(digits)
+        q &= part
+    return q
+
+
 class AdminUserViewSet(mixins.ListModelMixin, mixins.UpdateModelMixin, viewsets.GenericViewSet):
     """Панель: база клиентов со статистикой визитов, смена статуса, контактов и меток."""
     serializer_class = AdminUserSerializer
     permission_classes = [IsAdminUser]
+    pagination_class = OptionalPagination  # ?page=1&page_size=20; без параметров — весь список
 
     def get_queryset(self):
         half_year_ago = timezone.localdate() - timedelta(days=REGULAR_CANDIDATE_DAYS)
+        users = User.objects.select_related("profile", "employee_profile")
+        search = self.request.query_params.get("search", "").strip()  # ?search=анна или ?search=900123
+        if search:
+            users = users.filter(_search_q(search))
         return (
-            User.objects.select_related("profile", "employee_profile")
+            users
             .annotate(
                 visits=Count("bookings", filter=COMPLETED),
                 recent_visits=Count("bookings", filter=COMPLETED & Q(bookings__date__gte=half_year_ago)),
                 last_visit=Max("bookings__date", filter=COMPLETED),
                 total_spent=Sum("bookings__price", filter=COMPLETED),
+                # подзапросом: второй JOIN рядом с bookings размножил бы суммы выше
+                bonus_balance=Coalesce(Subquery(
+                    BonusOperation.objects.filter(client=OuterRef("pk")).values("client")
+                    .annotate(total=Sum("amount")).values("total")
+                ), 0),
             )
-            .order_by("-date_joined")
+            .order_by("-date_joined", "-id")
         )
+
+    @action(detail=True, methods=["get"])
+    def bookings(self, request, pk=None):
+        """История записей конкретного клиента."""
+        user = get_object_or_404(User, pk=pk)
+        items = Booking.objects.filter(client=user).select_related("service", "employee", "review")
+        return Response(BookingSerializer(items, many=True).data)
+
+    @action(detail=True, methods=["get", "post"])
+    def bonus(self, request, pk=None):
+        """Баллы клиента: GET — баланс и история, POST {amount, comment} — начислить (+) или списать (−)."""
+        user = get_object_or_404(User, pk=pk)
+        if request.method == "POST":
+            operation = BonusOperationSerializer(data=request.data)
+            operation.is_valid(raise_exception=True)
+            balance = bonus_balance(user)
+            if balance + operation.validated_data["amount"] < 0:
+                raise ValidationError({"amount": f"Недостаточно баллов: на балансе {balance}."})
+            operation.save(client=user)
+        return Response(_bonus_summary(user))
 
     def perform_update(self, serializer):
         if serializer.instance == self.request.user and serializer.validated_data.get("is_staff") is False:
@@ -139,4 +214,4 @@ def password_reset_confirm(request):
 
 class LoginView(TokenObtainPairView):
     throttle_classes = [ScopedRateThrottle]
-    throttle_score = "login"
+    throttle_scope = "login"

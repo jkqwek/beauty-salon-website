@@ -1,29 +1,44 @@
+import { t } from "@/lib/i18n"
 import { useEffect, useState } from "react"
 import { X, CheckCircle2 } from "lucide-react"
+import {
+  authApi,
+  bookingApi,
+  catalogApi,
+  type Employee,
+  type GuestBookingResult,
+  type Service,
+} from "@/api/api"
 import { toApiError, type ApiError } from "@/api/client"
 import { useApi } from "@/api/useApi"
-import { formatDate, formatDuration } from "@/lib/format"
+import { useAuth } from "@/auth/AuthContext"
+import { formatDate, formatDuration, maskPhone } from "@/lib/format"
+import { validators } from "@/lib/validators"
 import { masterPhoto } from "@/lib/photos"
 import { Avatar } from "./Avatar"
 import { BookingCalendar, SlotPicker } from "./BookingCalendar"
 import { ErrorMessage } from "./ErrorMessage"
 import { PriceTag } from "./PriceTag"
-import { bookingApi, catalogApi, type Employee, type GuestBookingResult, type Service } from "@/api/api"
-import { useAuth } from "@/auth/AuthContext"
+
+/** «Записаться снова» и «Записаться» из сравнения: услуга и, если известен, мастер */
+export interface BookingPrefill {
+  serviceId: number
+  employeeId?: number
+}
+
+/** Что нужно уведомлению об успехе: подходит и запись вошедшего клиента, и гостевая */
+export type BookedSummary = Pick<GuestBookingResult, "service_name" | "date" | "start_time">
 
 interface BookingWizardProps {
   onClose: () => void
-  onLogin?: () => void
+  onBooked: (booking: BookedSummary, info: { guest: boolean }) => void // окно закрывается, об успехе сообщает уведомление
+  onLogin?: () => void // «Уже есть аккаунт? Войти» (для гостя)
+  prefill?: BookingPrefill | null
 }
 
-type CreatedBooking = Pick<GuestBookingResult, "service_name" | "employee_name" | "date" | "start_time">
-const guestInputClass =
-  "w-full rounded-2xl border border-rose-200 bg-white px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-gold transition-colors"
+const digits = (phone: string | null | undefined) => (phone ?? "").replace(/\D/g, "")
 
-
-export function BookingWizard({ onClose, onLogin }: BookingWizardProps) {
-
-  const { user } = useAuth()
+export function BookingWizard({ onClose, onBooked, onLogin, prefill }: BookingWizardProps) {
   const [step, setStep] = useState(1)
   const [service, setService] = useState<Service | null>(null)
   const [master, setMaster] = useState<Employee | "any" | null>(null)
@@ -37,12 +52,15 @@ export function BookingWizard({ onClose, onLogin }: BookingWizardProps) {
 
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<ApiError | null>(null)
-  const [created, setCreated] = useState<CreatedBooking | null>(null)
-  const [guestName, setGuestName] = useState("")
-  const [guestPhone, setGuestPhone] = useState("")
 
+  // телефон для связи: у вошедшего берётся из профиля и после исправления сохраняется обратно,
+  // у гостя это номер для связи с салоном
+  const { user, updateUser } = useAuth()
   const isGuest = !user
-  const guestValid = guestName.trim().length >= 2 && guestPhone.replace(/\D/g, "").length >= 10
+  const [guestName, setGuestName] = useState("")
+  const [phone, setPhone] = useState(() => maskPhone(user?.phone ?? ""))
+  const phoneError = phone ? validators.phone(phone) : t("Укажите телефон, чтобы салон мог с вами связаться")
+  const canSubmit = !phoneError && (!isGuest || guestName.trim().length >= 2)
 
   const services = useApi(catalogApi.services)
   const employees = useApi(
@@ -54,6 +72,28 @@ export function BookingWizard({ onClose, onLogin }: BookingWizardProps) {
     () => (service && date ? bookingApi.price(service.id, date) : Promise.resolve(null)),
     [service?.id, date],
   )
+
+  // «Записаться снова»: сразу к выбору даты. Мастер больше не делает услугу — к выбору мастера,
+  // услугу убрали из каталога — обычная запись с первого шага
+  useEffect(() => {
+    if (!prefill || !services.data) return
+    const svc = services.data.find((s) => s.id === prefill.serviceId)
+    if (!svc) return
+    setService(svc)
+    let cancelled = false
+    catalogApi
+      .employees(svc.id)
+      .then((list) => {
+        if (cancelled) return
+        const same = list.find((e) => e.id === prefill.employeeId)
+        if (same) setMaster(same)
+        setStep(same ? 3 : 2)
+      })
+      .catch(() => !cancelled && setStep(2))
+    return () => {
+      cancelled = true
+    }
+  }, [services.data])
 
   // Шаг 3: свободные слоты. Для «Любой мастер» опрашиваем всех подходящих мастеров
   useEffect(() => {
@@ -100,21 +140,23 @@ export function BookingWizard({ onClose, onLogin }: BookingWizardProps) {
   }
 
   const submit = async () => {
-    if (!service || !date || !time || !employeeId) return
-    if (isGuest && !guestValid) return
+    if (!service || !date || !time || !employeeId || !canSubmit) return
     setSubmitting(true)
     setSubmitError(null)
     try {
       const payload = { employee: employeeId, service: service.id, date, start_time: time }
-      setCreated(
-        isGuest
-          ? await bookingApi.createGuest({
-              ...payload,
-              guest_name: guestName.trim(),
-              guest_phone: guestPhone.trim(),
-            })
-          : await bookingApi.create(payload),
-      )
+      if (isGuest) {
+        const booked = await bookingApi.createGuest({
+          ...payload,
+          guest_name: guestName.trim(),
+          guest_phone: phone,
+        })
+        onBooked(booked, { guest: true })
+      } else {
+        if (digits(phone) !== digits(user?.phone)) updateUser(await authApi.updateMe({ phone }))
+        const booked = await bookingApi.create(payload)
+        onBooked(booked, { guest: false })
+      }
     } catch (e) {
       const err = toApiError(e)
       setSubmitError(err)
@@ -131,7 +173,7 @@ export function BookingWizard({ onClose, onLogin }: BookingWizardProps) {
         {/* Header */}
         <div className="bg-white p-6 border-b border-rose-100 flex items-center justify-between shrink-0">
           <div className="flex flex-col">
-            <h2 className="text-2xl font-serif text-foreground">Запись</h2>
+            <h2 className="text-2xl font-serif text-foreground">{t("Запись")}</h2>
             <div className="flex items-center gap-2 mt-2">
               {[1, 2, 3, 4].map((s) => (
                 <div key={s} className="flex items-center gap-2">
@@ -159,7 +201,7 @@ export function BookingWizard({ onClose, onLogin }: BookingWizardProps) {
           </div>
           <button
             onClick={onClose}
-            aria-label="Закрыть"
+            aria-label={t("Закрыть")}
             className="p-2 text-muted-foreground hover:text-foreground transition-colors bg-rose-50 rounded-full"
           >
             <X className="size-5" />
@@ -168,329 +210,292 @@ export function BookingWizard({ onClose, onLogin }: BookingWizardProps) {
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-6 md:p-8 hide-scrollbar">
-          {created ? (
-            <div className="flex flex-col items-center justify-center py-8 text-center space-y-4">
-              <div className="size-20 rounded-full bg-gold/10 flex items-center justify-center">
+          {submitError && (
+            <div className="mb-6">
+              <ErrorMessage error={submitError} />
+            </div>
+          )}
+
+          {step === 1 && (
+            <div className="space-y-4">
+              <h3 className="text-xl font-serif text-foreground mb-6">{t("Выберите услугу")}</h3>
+              {services.loading && <p className="text-muted-foreground">{t("Загрузка…")}</p>}
+              {services.error && (
+                <ErrorMessage error={services.error} onRetry={services.reload} />
+              )}
+              {services.data?.map((svc) => (
+                <div
+                  key={svc.id}
+                  onClick={() => chooseService(svc)}
+                  className={`p-5 rounded-2xl border-2 cursor-pointer transition-all ${
+                    service?.id === svc.id
+                      ? "border-gold bg-white shadow-sm"
+                      : "border-transparent bg-white hover:border-gold/30"
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="font-medium text-foreground text-lg">{t(svc.name)}</h4>
+                      <p className="text-sm text-muted-foreground flex flex-wrap items-baseline gap-x-1">
+                        {formatDuration(svc.duration_minutes)} •{" "}
+                        <PriceTag base={svc.price} price={svc.price_today} discount={svc.discount_percent} />
+                      </p>
+                    </div>
+                    <div
+                      className={`size-6 rounded-full border-2 flex items-center justify-center transition-colors ${
+                        service?.id === svc.id
+                          ? "border-gold bg-gold text-white"
+                          : "border-rose-200"
+                      }`}
+                    >
+                      {service?.id === svc.id && <CheckCircle2 className="size-4" />}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {step === 2 && (
+            <div className="space-y-6">
+              <h3 className="text-xl font-serif text-foreground mb-2">{t("Выберите мастера")}</h3>
+              {employees.loading && <p className="text-muted-foreground">{t("Загрузка…")}</p>}
+              {employees.error && (
+                <ErrorMessage error={employees.error} onRetry={employees.reload} />
+              )}
+              {employees.data?.length === 0 && (
+                <p className="text-muted-foreground">
+                  {t("Для этой услуги пока нет мастеров. Выберите другую услугу.")}
+                </p>
+              )}
+              {!!employees.data?.length && (
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                  {[...employees.data, "any" as const].map((m) => {
+                    const isAny = m === "any"
+                    const selected = isAny ? master === "any" : master !== "any" && master?.id === m.id
+                    return (
+                      <div
+                        key={isAny ? "any" : m.id}
+                        onClick={() => setMaster(m)}
+                        className={`flex flex-col items-center p-4 rounded-2xl border-2 cursor-pointer transition-all text-center ${
+                          selected
+                            ? "border-gold bg-white shadow-sm"
+                            : "border-transparent bg-white hover:border-gold/30"
+                        }`}
+                      >
+                        <div
+                          className={`size-16 rounded-full p-1 border-2 mb-3 transition-colors ${
+                            selected ? "border-gold" : "border-transparent"
+                          }`}
+                        >
+                          <div className="size-full rounded-full bg-rose-100 overflow-hidden flex items-center justify-center text-rose-400">
+                            {isAny ? (
+                              <span className="font-serif text-sm">{t("Любой")}</span>
+                            ) : (
+                              <Avatar src={masterPhoto(m)} name={m.full_name} className="size-full text-base" />
+                            )}
+                          </div>
+                        </div>
+                        <span className="font-medium text-sm text-foreground">
+                          {isAny ? t("Любой") : t(m.full_name)}
+                        </span>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {step === 3 && (
+            <div className="space-y-8">
+              <h3 className="text-xl font-serif text-foreground">{t("Выберите дату и время")}</h3>
+
+              {service && master && (
+                <BookingCalendar
+                  serviceId={service.id}
+                  employeeId={master === "any" ? null : master.id}
+                  value={date}
+                  onChange={(iso) => {
+                    setDate(iso)
+                    setSubmitError(null)
+                  }}
+                />
+              )}
+
+              <div>
+                <h4 className="font-medium text-foreground mb-4">{t("Свободное время")}</h4>
+                {!date && (
+                  <p className="text-sm text-muted-foreground">
+                    {t("Выберите дату, чтобы увидеть свободное время.")}
+                  </p>
+                )}
+                {date && slotsLoading && <p className="text-muted-foreground">{t("Загрузка…")}</p>}
+                {date && slotsError && (
+                  <ErrorMessage
+                    error={slotsError}
+                    onRetry={() => setSlotsAttempt((n) => n + 1)}
+                  />
+                )}
+                {date && !slotsLoading && !slotsError && times.length === 0 && (
+                  <p className="text-sm text-muted-foreground">
+                    {t("На эту дату свободного времени нет — выберите другой день.")}
+                  </p>
+                )}
+                {date && !slotsLoading && (
+                  <SlotPicker
+                    slots={times}
+                    value={time}
+                    onChange={(slot) => {
+                      setTime(slot)
+                      setSubmitError(null)
+                    }}
+                  />
+                )}
+              </div>
+            </div>
+          )}
+
+          {step === 4 && (
+            <div className="flex flex-col items-center justify-center py-8 text-center space-y-6">
+              <div className="size-20 rounded-full bg-gold/10 flex items-center justify-center mb-2">
                 <div className="size-14 rounded-full bg-gold flex items-center justify-center text-white">
                   <CheckCircle2 className="size-8" />
                 </div>
               </div>
-              <h3 className="text-3xl font-serif text-foreground">Вы записаны!</h3>
-              {isGuest ? (
-                <p className="text-sm text-yellow-800 bg-yellow-50 border border-yellow-200 rounded-2xl px-4 py-2">
-                  Запись ждёт подтверждения салоном. Мы свяжемся с вами по номеру {guestPhone.trim()}.
-                  Чтобы изменить или отменить запись, позвоните в салон.
-                </p>
-              ) : (
-                <p className="text-sm text-yellow-800 bg-yellow-50 border border-yellow-200 rounded-full px-4 py-1">
-                  Запись ждёт подтверждения салоном — статус виден в личном кабинете
-                </p>
-              )}
-              <p className="text-muted-foreground">
-                {created.service_name} • {created.employee_name}
-                <br />
-                {formatDate(created.date)}, {created.start_time.slice(0, 5)}
-              </p>
-            </div>
-          ) : (
-            <>
-              {submitError && (
-                <div className="mb-6">
-                  <ErrorMessage error={submitError} />
+              <h3 className="text-3xl font-serif text-foreground">{t("Подтвердите запись")}</h3>
+
+              <div className="w-full bg-white rounded-2xl border border-rose-100 p-6 text-left space-y-4 mt-4">
+                <div className="flex justify-between items-center pb-4 border-b border-rose-50">
+                  <span className="text-muted-foreground">{t("Услуга")}</span>
+                  <span className="font-medium text-foreground">{service && t(service.name)}</span>
                 </div>
-              )}
-
-              {step === 1 && (
-                <div className="space-y-4">
-                  <h3 className="text-xl font-serif text-foreground mb-6">Выберите услугу</h3>
-                  {services.loading && <p className="text-muted-foreground">Загрузка…</p>}
-                  {services.error && (
-                    <ErrorMessage error={services.error} onRetry={services.reload} />
-                  )}
-                  {services.data?.map((svc) => (
-                    <div
-                      key={svc.id}
-                      onClick={() => chooseService(svc)}
-                      className={`p-5 rounded-2xl border-2 cursor-pointer transition-all ${
-                        service?.id === svc.id
-                          ? "border-gold bg-white shadow-sm"
-                          : "border-transparent bg-white hover:border-gold/30"
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <h4 className="font-medium text-foreground text-lg">{svc.name}</h4>
-                          <p className="text-sm text-muted-foreground flex flex-wrap items-baseline gap-x-1">
-                            {formatDuration(svc.duration_minutes)} •{" "}
-                            <PriceTag base={svc.price} price={svc.price_today} discount={svc.discount_percent} />
-                          </p>
-                        </div>
-                        <div
-                          className={`size-6 rounded-full border-2 flex items-center justify-center transition-colors ${
-                            service?.id === svc.id
-                              ? "border-gold bg-gold text-white"
-                              : "border-rose-200"
-                          }`}
-                        >
-                          {service?.id === svc.id && <CheckCircle2 className="size-4" />}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
+                <div className="flex justify-between items-center pb-4 border-b border-rose-50">
+                  <span className="text-muted-foreground">{t("Мастер")}</span>
+                  <span className="font-medium text-foreground">{chosenEmployee && t(chosenEmployee.full_name)}</span>
                 </div>
-              )}
-
-              {step === 2 && (
-                <div className="space-y-6">
-                  <h3 className="text-xl font-serif text-foreground mb-2">Выберите мастера</h3>
-                  {employees.loading && <p className="text-muted-foreground">Загрузка…</p>}
-                  {employees.error && (
-                    <ErrorMessage error={employees.error} onRetry={employees.reload} />
-                  )}
-                  {employees.data?.length === 0 && (
-                    <p className="text-muted-foreground">
-                      Для этой услуги пока нет мастеров. Выберите другую услугу.
-                    </p>
-                  )}
-                  {!!employees.data?.length && (
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                      {[...employees.data, "any" as const].map((m) => {
-                        const isAny = m === "any"
-                        const selected = isAny ? master === "any" : master !== "any" && master?.id === m.id
-                        return (
-                          <div
-                            key={isAny ? "any" : m.id}
-                            onClick={() => setMaster(m)}
-                            className={`flex flex-col items-center p-4 rounded-2xl border-2 cursor-pointer transition-all text-center ${
-                              selected
-                                ? "border-gold bg-white shadow-sm"
-                                : "border-transparent bg-white hover:border-gold/30"
-                            }`}
-                          >
-                            <div
-                              className={`size-16 rounded-full p-1 border-2 mb-3 transition-colors ${
-                                selected ? "border-gold" : "border-transparent"
-                              }`}
-                            >
-                              <div className="size-full rounded-full bg-rose-100 overflow-hidden flex items-center justify-center text-rose-400">
-                                {isAny ? (
-                                  <span className="font-serif text-sm">Любой</span>
-                                ) : (
-                                  <Avatar src={masterPhoto(m)} name={m.full_name} className="size-full text-base" />
-                                )}
-                              </div>
-                            </div>
-                            <span className="font-medium text-sm text-foreground">
-                              {isAny ? "Любой" : m.full_name}
-                            </span>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  )}
+                <div className="flex justify-between items-center pb-4 border-b border-rose-50">
+                  <span className="text-muted-foreground">{t("Дата и время")}</span>
+                  <span className="font-medium text-foreground">
+                    {date && formatDate(date)}, {time}
+                  </span>
                 </div>
-              )}
-
-              {step === 3 && (
-                <div className="space-y-8">
-                  <h3 className="text-xl font-serif text-foreground">Выберите дату и время</h3>
-
-                  {service && master && (
-                    <BookingCalendar
-                      serviceId={service.id}
-                      employeeId={master === "any" ? null : master.id}
-                      value={date}
-                      onChange={(iso) => {
-                        setDate(iso)
-                        setSubmitError(null)
-                      }}
-                    />
-                  )}
-
-                  <div>
-                    <h4 className="font-medium text-foreground mb-4">Свободное время</h4>
-                    {!date && (
-                      <p className="text-sm text-muted-foreground">
-                        Выберите дату, чтобы увидеть свободное время.
-                      </p>
-                    )}
-                    {date && slotsLoading && <p className="text-muted-foreground">Загрузка…</p>}
-                    {date && slotsError && (
-                      <ErrorMessage
-                        error={slotsError}
-                        onRetry={() => setSlotsAttempt((n) => n + 1)}
-                      />
-                    )}
-                    {date && !slotsLoading && !slotsError && times.length === 0 && (
-                      <p className="text-sm text-muted-foreground">
-                        На эту дату свободного времени нет — выберите другой день.
-                      </p>
-                    )}
-                    {date && !slotsLoading && (
-                      <SlotPicker
-                        slots={times}
-                        value={time}
-                        onChange={(t) => {
-                          setTime(t)
-                          setSubmitError(null)
-                        }}
-                      />
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {step === 4 && (
-                <div className="flex flex-col items-center justify-center py-8 text-center space-y-6">
-                  <div className="size-20 rounded-full bg-gold/10 flex items-center justify-center mb-2">
-                    <div className="size-14 rounded-full bg-gold flex items-center justify-center text-white">
-                      <CheckCircle2 className="size-8" />
-                    </div>
-                  </div>
-                  <h3 className="text-3xl font-serif text-foreground">Подтвердите запись</h3>
-
-                  <div className="w-full bg-white rounded-2xl border border-rose-100 p-6 text-left space-y-4 mt-4">
-                    <div className="flex justify-between items-center pb-4 border-b border-rose-50">
-                      <span className="text-muted-foreground">Услуга</span>
-                      <span className="font-medium text-foreground">{service?.name}</span>
-                    </div>
-                    <div className="flex justify-between items-center pb-4 border-b border-rose-50">
-                      <span className="text-muted-foreground">Мастер</span>
-                      <span className="font-medium text-foreground">{chosenEmployee?.full_name}</span>
-                    </div>
-                    <div className="flex justify-between items-center pb-4 border-b border-rose-50">
-                      <span className="text-muted-foreground">Дата и время</span>
-                      <span className="font-medium text-foreground">
-                        {date && formatDate(date)}, {time}
-                      </span>
-                    </div>
-                    <div className="flex justify-between items-center gap-4">
-                      <span className="text-muted-foreground">Цена</span>
-                      <span className="font-medium text-foreground text-right">
-                        {quote.data ? (
-                          <>
-                            <PriceTag base={quote.data.base_price} price={quote.data.price} discount={quote.data.discount_percent} />
-                            {quote.data.promotion && (
-                              <span className="block text-xs text-muted-foreground font-normal">Акция «{quote.data.promotion}»</span>
-                            )}
-                          </>
-                        ) : (
-                          "…"
+                <div className="flex justify-between items-center gap-4 pb-4 border-b border-rose-50">
+                  <span className="text-muted-foreground">{t("Цена")}</span>
+                  <span className="font-medium text-foreground text-right">
+                    {quote.data ? (
+                      <>
+                        <PriceTag base={quote.data.base_price} price={quote.data.price} discount={quote.data.discount_percent} />
+                        {quote.data.promotion && (
+                          <span className="block text-xs text-muted-foreground font-normal">{t("Акция")} «{quote.data.promotion}»</span>
                         )}
-                      </span>
-                    </div>
+                      </>
+                    ) : (
+                      "…"
+                    )}
+                  </span>
+                </div>
+
+                {isGuest && (
+                  <div className="space-y-1.5">
+                    <label htmlFor="booking-name" className="text-muted-foreground">
+                      {t("Ваше имя")}
+                    </label>
+                    <input
+                      id="booking-name"
+                      value={guestName}
+                      onChange={(e) => setGuestName(e.target.value)}
+                      maxLength={100}
+                      autoComplete="name"
+                      className="w-full px-4 py-3 rounded-xl border border-rose-200 bg-white focus:outline-none focus:border-gold focus:ring-1 focus:ring-gold transition-shadow"
+                    />
                   </div>
-                  {isGuest && (
-                    <div className="w-full bg-white rounded-2xl border border-rose-100 p-6 text-left space-y-4">
-                      <div>
-                        <h4 className="font-medium text-foreground">Ваши контакты</h4>
-                        <p className="text-sm text-muted-foreground">
-                          Запись без регистрации. Салон позвонит, если нужно уточнить детали.
-                        </p>
-                      </div>
+                )}
 
-                      <div>
-                        <label htmlFor="guest-name" className="block text-sm font-medium text-foreground mb-1">
-                          Имя
-                        </label>
-                        <input
-                          id="guest-name"
-                          value={guestName}
-                          onChange={(e) => setGuestName(e.target.value)}
-                          maxLength={100}
-                          autoComplete="name"
-                          className={guestInputClass}
-                        />
-                      </div>
+                <div className="space-y-1.5">
+                  <label htmlFor="booking-phone" className="text-muted-foreground">
+                    {t("Телефон для связи")}
+                  </label>
+                  <input
+                    id="booking-phone"
+                    type="tel"
+                    inputMode="tel"
+                    autoComplete="tel"
+                    value={phone}
+                    onChange={(e) => setPhone(maskPhone(e.target.value))}
+                    placeholder="+7 (900) 123-45-67"
+                    aria-invalid={Boolean(phoneError)}
+                    aria-describedby="booking-phone-hint"
+                    className="w-full px-4 py-3 rounded-xl border border-rose-200 bg-white focus:outline-none focus:border-gold focus:ring-1 focus:ring-gold transition-shadow"
+                  />
+                  <p id="booking-phone-hint" className={`text-xs ${phoneError ? "text-rose-600" : "text-muted-foreground"}`}>
+                    {phoneError ??
+                      (isGuest
+                        ? t("По этому номеру салон подтвердит запись")
+                        : t("Сохраним в профиле — по нему салон подтвердит запись"))}
+                  </p>
+                </div>
+              </div>
 
-                      <div>
-                        <label htmlFor="guest-phone" className="block text-sm font-medium text-foreground mb-1">
-                          Телефон
-                        </label>
-                        <input
-                          id="guest-phone"
-                          type="tel"
-                          inputMode="tel"
-                          autoComplete="tel"
-                          value={guestPhone}
-                          onChange={(e) => setGuestPhone(e.target.value)}
-                          maxLength={30}
-                          placeholder="+7 900 000-00-00"
-                          className={guestInputClass}
-                        />
-                      </div>
-
-                      {onLogin && (
-                        <p className="text-sm text-muted-foreground">
-                          Уже есть аккаунт?{" "}
-                          <button type="button" onClick={onLogin} className="text-gold hover:text-gold-hover font-medium">
-                            Войти
-                          </button>
-                          , чтобы управлять записями в личном кабинете.
-                        </p>
-                      )}
-
-                      <p className="text-xs text-muted-foreground">
-                        Нажимая «Подтвердить запись», вы соглашаетесь на обработку персональных данных для оформления записи.
-                      </p>
-                    </div>
-                  )}
+              {isGuest && (
+                <div className="w-full text-left space-y-2">
+                  <p className="text-sm text-muted-foreground">
+                    {t("Запись без регистрации. Чтобы изменить или отменить её, позвоните в салон.")}
+                    {onLogin && (
+                      <>
+                        {" "}
+                        {t("Уже есть аккаунт?")}{" "}
+                        <button type="button" onClick={onLogin} className="text-gold-dark hover:text-gold font-medium">
+                          {t("Войти")}
+                        </button>
+                      </>
+                    )}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {t("Нажимая «Подтвердить запись», вы соглашаетесь на обработку персональных данных для оформления записи.")}
+                  </p>
                 </div>
               )}
-            </>
+            </div>
           )}
         </div>
 
         {/* Footer */}
         <div className="bg-white p-6 border-t border-rose-100 flex items-center justify-between shrink-0">
-          {created ? (
-            <>
-              <span />
-              <button
-                onClick={onClose}
-                className="bg-gold hover:bg-gold-hover text-white px-8 py-3 rounded-full font-medium transition-colors shadow-sm"
-              >
-                Готово
-              </button>
-            </>
-          ) : (
-            <>
-              <button
-                onClick={() => {
-                  setSubmitError(null)
-                  step > 1 ? setStep(step - 1) : onClose()
-                }}
-                className="text-muted-foreground font-medium hover:text-foreground transition-colors px-4 py-2"
-              >
-                {step > 1 ? "Назад" : "Отмена"}
-              </button>
+          <button
+            onClick={() => {
+              setSubmitError(null)
+              step > 1 ? setStep(step - 1) : onClose()
+            }}
+            className="text-muted-foreground font-medium hover:text-foreground transition-colors px-4 py-2"
+          >
+            {step > 1 ? t("Назад") : t("Отмена")}
+          </button>
 
-              {step < 4 ? (
-                <button
-                  onClick={() => {
-                    setSubmitError(null)
-                    setStep(step + 1)
-                  }}
-                  disabled={
-                    (step === 1 && !service) ||
-                    (step === 2 && !master) ||
-                    (step === 3 && !time)
-                  }
-                  className="bg-gold hover:bg-gold-hover text-white px-8 py-3 rounded-full font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
-                >
-                  Продолжить
-                </button>
-              ) : (
-                <button
-                  onClick={submit}
-                  disabled={submitting || (isGuest && !guestValid)}
-                  className="bg-gold hover:bg-gold-hover text-white px-8 py-3 rounded-full font-medium transition-colors shadow-md flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <CheckCircle2 className="size-5" />
-                  {submitting ? "Отправка…" : "Подтвердить запись"}
-                </button>
-              )}
-            </>
+          {step < 4 ? (
+            <button
+              onClick={() => {
+                setSubmitError(null)
+                setStep(step + 1)
+              }}
+              disabled={
+                (step === 1 && !service) ||
+                (step === 2 && !master) ||
+                (step === 3 && !time)
+              }
+              className="bg-gold hover:bg-gold-hover text-white px-8 py-3 rounded-full font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+            >
+              {t("Продолжить")}
+            </button>
+          ) : (
+            <button
+              onClick={submit}
+              disabled={submitting || !canSubmit}
+              className="bg-gold hover:bg-gold-hover text-white px-8 py-3 rounded-full font-medium transition-colors shadow-md flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <CheckCircle2 className="size-5" />
+              {submitting ? t("Отправка…") : t("Подтвердить запись")}
+            </button>
           )}
         </div>
       </div>

@@ -2,6 +2,7 @@
 import json
 import os
 from html import escape
+import sys
 
 import requests
 from dotenv import load_dotenv
@@ -14,6 +15,8 @@ TELEGRAM_API_URL = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
 
 
 def _send_message(chat_id, text: str, reply_markup: dict | None = None) -> bool:
+    if "test" in sys.argv:  # при запуске тестов ничего не отправляем
+        return False
     if not BOT_TOKEN:
         print("BOT_TOKEN не настроен — уведомление не отправлено.")
         return False

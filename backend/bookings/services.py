@@ -161,8 +161,8 @@ def conflict_label(b):
 
 def visit_bonus(booking):
     """Баллы за визит: BONUS_PERCENT от цены (уже со скидкой), дробная часть отбрасывается."""
-    if booking.status != "completed" or not booking.price:
-        return 0
+    if booking.status != "completed" or not booking.price or not booking.client_id:
+        return 0  # у гостевой записи нет клиента, начислять баллы некому
     return int(booking.price * BONUS_PERCENT / 100)
 
 

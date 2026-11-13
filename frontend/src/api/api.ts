@@ -394,7 +394,41 @@ export const financeApi = {
     api<EmployeeWorkloadRow[]>(`/finance/employee-workload/${toQueryString(params)}`),
 
   weekdayRevenue: () => api<WeekdayRevenueRow[]>("/finance/weekday-revenue/"),
+
+  popularServices: (params: DateRangeParams = {}) =>
+    api<PopularServicesReport>(`/finance/popular-services/${toQueryString(params)}`),
+
+  cancellations: (params: DateRangeParams = {}) =>
+    api<CancellationsReport>(`/finance/cancellations/${toQueryString(params)}`),
 }
+
+export interface PopularServiceRevenueRow {
+  service_id: number
+  service_name: string
+  bookings_count: number
+  revenue: string
+  avg_check: string
+  share_percent: number
+}
+
+export interface PopularServicesReport {
+  date_from: string | null
+  date_to: string | null
+  total_revenue: string
+  results: PopularServiceRevenueRow[]
+}
+
+export interface CancellationsReport {
+  date_from: string | null
+  date_to: string | null
+  bookings_total: number
+  cancelled_count: number
+  cancel_rate: number
+  lost_revenue: string
+  by_service: { service_id: number; service_name: string; cancelled_count: number; lost_revenue: string }[]
+  by_employee: { employee_id: number; employee_name: string; cancelled_count: number; lost_revenue: string }[]
+}
+
 export interface PanelCounters {
   pending_bookings: number
   new_reviews: number

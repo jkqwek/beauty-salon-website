@@ -14,14 +14,55 @@ import {
   Legend,
 } from "recharts"
 
+const tableWrap = "bg-white rounded-3xl border border-rose-100 overflow-x-auto"
+
+/** Таблица «название — отмен — потеряно» для разбивки по услугам и по мастерам */
+function LostTable({
+  title,
+  rows,
+}: {
+  title: string
+  rows: { key: number; name: string; count: number; lost: string }[]
+}) {
+  return (
+    <div>
+      <h3 className="text-lg font-serif text-foreground mb-3">{title}</h3>
+      <div className={tableWrap}>
+        <table className="w-full text-sm">
+          <thead className="bg-rose-50 text-muted-foreground text-left">
+            <tr>
+              <th className="p-4">Название</th>
+              <th className="p-4">Отмен</th>
+              <th className="p-4">Потеряно</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.key} className="border-t border-rose-50">
+                <td className="p-4">{row.name}</td>
+                <td className="p-4">{row.count}</td>
+                <td className="p-4">{formatPrice(row.lost)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
 export function FinancePage() {
   const revenue = useApi(() => financeApi.revenueReport({ group_by: "month" }), [])
   const workload = useApi(() => financeApi.employeeWorkload(), [])
   const income = useApi(() => financeApi.incomeSummary(), [])
   const expenses = useApi(() => financeApi.expenses(), [])
+  const popular = useApi(() => financeApi.popularServices(), [])
+  const cancelled = useApi(() => financeApi.cancellations(), [])
 
-  const loading = revenue.loading || workload.loading || income.loading || expenses.loading
-  const error = revenue.error || workload.error || income.error || expenses.error
+  const loading =
+    revenue.loading || workload.loading || income.loading || expenses.loading || popular.loading || cancelled.loading
+  const error =
+    revenue.error || workload.error || income.error || expenses.error || popular.error || cancelled.error
 
   return (
     <div>
@@ -29,7 +70,7 @@ export function FinancePage() {
 
       {loading && <p className="text-muted-foreground">Загрузка…</p>}
       {error && <ErrorMessage error={error} onRetry={() => {
-        revenue.reload(); workload.reload(); income.reload(); expenses.reload()
+        revenue.reload(); workload.reload(); income.reload(); expenses.reload(); popular.reload(); cancelled.reload()
       }} />}
 
       {!loading && !error && (
@@ -66,6 +107,48 @@ export function FinancePage() {
             </div>
           )}
 
+          {/* какие услуги приносят больше денег */}
+          {popular.data && (
+            <>
+              <h2 className="text-xl font-serif text-foreground mb-4">Какие услуги приносят больше денег</h2>
+              {popular.data.results.length === 0 ? (
+                <p className="text-muted-foreground mb-8">Выполненных записей пока нет.</p>
+              ) : (
+                <div className={`${tableWrap} mb-8`}>
+                  <table className="w-full text-sm">
+                    <thead className="bg-rose-50 text-muted-foreground text-left">
+                      <tr>
+                        <th className="p-4">Услуга</th>
+                        <th className="p-4">Записей</th>
+                        <th className="p-4">Выручка</th>
+                        <th className="p-4">Средний чек</th>
+                        <th className="p-4">Доля выручки</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {popular.data.results.map((row) => (
+                        <tr key={row.service_id} className="border-t border-rose-50">
+                          <td className="p-4">{row.service_name}</td>
+                          <td className="p-4">{row.bookings_count}</td>
+                          <td className="p-4 whitespace-nowrap">{formatPrice(row.revenue)}</td>
+                          <td className="p-4 whitespace-nowrap">{formatPrice(row.avg_check)}</td>
+                          <td className="p-4 min-w-44">
+                            <div className="flex items-center gap-3">
+                              <div className="h-2 flex-1 rounded-full bg-rose-100 overflow-hidden" aria-hidden="true">
+                                <div className="h-full bg-gold" style={{ width: `${row.share_percent}%` }} />
+                              </div>
+                              <span className="w-14 text-right tabular-nums">{row.share_percent}%</span>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </>
+          )}
+
           {/* таблица загрузки мастеров */}
           {!!workload.data?.length && (
             <>
@@ -94,6 +177,50 @@ export function FinancePage() {
                   </tbody>
                 </table>
               </div>
+            </>
+          )}
+
+          {/* отменённые записи и потерянная выручка */}
+          {cancelled.data && (
+            <>
+              <h2 className="text-xl font-serif text-foreground mb-4">Отменённые записи</h2>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+                <div className="bg-white rounded-3xl border border-rose-100 p-6">
+                  <p className="text-sm text-muted-foreground mb-1">Отменено записей</p>
+                  <p className="text-2xl font-serif text-foreground">{cancelled.data.cancelled_count}</p>
+                </div>
+                <div className="bg-white rounded-3xl border border-rose-100 p-6">
+                  <p className="text-sm text-muted-foreground mb-1">Доля отмен</p>
+                  <p className="text-2xl font-serif text-foreground">{cancelled.data.cancel_rate}%</p>
+                  <p className="text-xs text-muted-foreground mt-1">от {cancelled.data.bookings_total} записей</p>
+                </div>
+                <div className="bg-white rounded-3xl border border-rose-100 p-6">
+                  <p className="text-sm text-muted-foreground mb-1">Потенциально потеряно</p>
+                  <p className="text-2xl font-serif text-foreground">{formatPrice(cancelled.data.lost_revenue)}</p>
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground mb-6">
+                Считается по дате визита. Это потенциальная выручка: освободившееся время мог занять другой клиент.
+              </p>
+
+              {cancelled.data.cancelled_count === 0 ? (
+                <p className="text-muted-foreground mb-8">Отмен пока нет.</p>
+              ) : (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+                  <LostTable
+                    title="По услугам"
+                    rows={cancelled.data.by_service.map((r) => ({
+                      key: r.service_id, name: r.service_name, count: r.cancelled_count, lost: r.lost_revenue,
+                    }))}
+                  />
+                  <LostTable
+                    title="По мастерам"
+                    rows={cancelled.data.by_employee.map((r) => ({
+                      key: r.employee_id, name: r.employee_name, count: r.cancelled_count, lost: r.lost_revenue,
+                    }))}
+                  />
+                </div>
+              )}
             </>
           )}
 

@@ -1,6 +1,10 @@
 from rest_framework.routers import DefaultRouter
 from django.urls import path, include
-from .views import ExpenseViewSet, StockItemViewSet, imcome_summary, revenue_report, employee_workload_report, price_calculation, earnings_report, master_payout_report, weekday_revenue_report
+from .views import (
+    ExpenseViewSet, StockItemViewSet, imcome_summary, revenue_report, employee_workload_report,
+    price_calculation, earnings_report, master_payout_report, weekday_revenue_report,
+    popular_services_by_revenue, cancellations_report,
+)
 
 router = DefaultRouter()
 router.register("expenses", ExpenseViewSet)
@@ -14,4 +18,6 @@ urlpatterns = [
     path("earnings/", earnings_report, name="earnings-report"),
     path("master-payout/", master_payout_report, name="master-payout"),
     path("weekday-revenue/", weekday_revenue_report, name="weekday-revenue"),
+    path("popular-services/", popular_services_by_revenue, name="popular-services-by-revenue"),
+    path("cancellations/", cancellations_report, name="cancellations-report"),
 ]

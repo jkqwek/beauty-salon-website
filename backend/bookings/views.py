@@ -73,7 +73,7 @@ def _service(request, booking):
 
 
 @api_view(["GET"])
-@permission_classes([IsAuthenticated])
+@permission_classes([AllowAny])
 @throttle_classes([PublicSlotsThrottle])
 def available_slots(request):
     booking = _own_booking(request)
@@ -85,7 +85,7 @@ def available_slots(request):
 
 
 @api_view(["GET"])
-@permission_classes([IsAuthenticated])
+@permission_classes([AllowAny])
 @throttle_classes([PublicSlotsThrottle])
 def available_days_view(request):
     """Календарь месяца (?month=ГГГГ-ММ): дни со свободным временем и подписи праздников.

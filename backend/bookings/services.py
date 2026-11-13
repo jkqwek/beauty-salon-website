@@ -177,6 +177,9 @@ def sync_visit_bonus(booking):
         defaults={"client_id": booking.client_id, "amount": points, "comment": f"За визит: {booking.service.name}"},
     )
 
+    if not booking.client_id:
+        return
+
 
 def bonus_balance(user):
     return user.bonus_operations.aggregate(total=Sum("amount"))["total"] or 0
@@ -270,3 +273,10 @@ def reward_referral(booking):
                                       comment="Приведи друга: друг пришёл на визит")
         BonusOperation.objects.create(client_id=referral.friend_id, amount=REFERRAL_BONUS,
                                       comment="Приведи друга: бонус за первый визит")
+
+    if not booking.client_id:
+        return
+
+def guest_busy(phone, day, start, end):
+    """Есть ли у гостя с этим телефоном другая активная запись, пересекающаяся с интервалом."""
+    return (Booking.objects.filter(client__isnull=True, guest_phone=phone, date=day, start_time__lt=end, end_time__gt=start, status__in=ACTIVE_STATUSES).exists())

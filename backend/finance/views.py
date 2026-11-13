@@ -20,6 +20,8 @@ from datetime import datetime
 
 from django.db.models.functions import TruncDay, TruncWeek, TruncMonth
 
+from .services import cancellations, date_range, popular_services
+
 class ExpenseViewSet(viewsets.ModelViewSet):
     queryset = Expense.objects.all()
     permission_classes = [IsAdminUser]
@@ -307,3 +309,44 @@ def weekday_revenue_report(request):
         }
         for i in range(1, 8)
     ])
+
+def _money(value):
+    return str(Decimal(value or 0).quantize(Decimal("0.01")))
+
+@api_view(["GET"])
+@permission_classes([IsAdminUser])
+def popular_services_by_revenue(request):
+    d_from, d_to = date_range(request.query_params)
+    rows = popular_services(d_from, d_to)
+    return Response({
+        "date_from": d_from,
+        "date_to": d_to,
+        "total_revenue": _money(sum((r["revenue"] for r in rows), Decimal("0"))),
+        "results": [
+            {
+                "service_id": r["service_id"],
+                "service_name": r["service_name"],
+                "bookings_count": r["bookings_count"],
+                "revenue": _money(r["revenue"]),
+                "avg_check": _money(r["avg_check"]),
+                "share_percent": r["share_percent"],
+            }
+            for r in rows
+        ],
+    })
+
+@api_view(["GET"])
+@permission_classes([IsAdminUser])
+def cancellations_report(request):
+    d_from, d_to = date_range(request.query_params)
+    data = cancellations(d_from, d_to)
+    return Response({
+        "date_from": d_from,
+        "date_to": d_to,
+        "bookings_total": data["bookings_total"],
+        "cancelled_count": data["cancelled_count"],
+        "cancel_rate": data["cancel_rate"],
+        "lost_revenue": _money(data["lost_revenue"]),
+        "by_service": [{**r, "lost_revenue": _money(r["lost_revenue"])} for r in data["by_service"]],
+        "by_employee": [{**r, "lost_revenue": _money(r["lost_revenue"])} for r in data["by_employee"]],
+    })

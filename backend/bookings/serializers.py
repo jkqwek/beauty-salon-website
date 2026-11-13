@@ -11,7 +11,7 @@ from .models import (
 )
 from .services import (
     MAX_DAYS_AHEAD, apply_promo, client_busy, closure_conflicts, conflict_label, find_promo, get_free_slots,
-    slot_taken,
+    slot_taken, guest_busy
 )
 
 BLOCKED_MESSAGE = "Онлайн-запись недоступна. Свяжитесь с салоном."
@@ -281,7 +281,11 @@ class GuestBookingCreateSerializer(BaseBookingCreateSerializer):
                 {"guest_phone": "На этот номер уже оформлено максимальное число записей. Свяжитесь с салоном."}
             )
 
-        return self.check_slot(attrs)
+        attrs = self.check_slot(attrs)
+        end = (datetime.combine(attrs["date"], attrs["start_time"]) + timedelta(minutes=attrs["service"].duration_minutes)).time()
+        if guest_busy(phone, attrs["date"], attrs["start_time"], end):
+            raise serializers.ValidationError({"start_time": "На этот номер уже есть запись на это время."})
+        return attrs
 
     def create(self, validated_data):
         return Booking.objects.create(

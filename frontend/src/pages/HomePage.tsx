@@ -264,7 +264,7 @@ export function HomePage() {
             <div className="text-center mb-12 md:mb-16">
               <h2 className="section-title mb-4">{t("Наши мастера")}</h2>
               <p className="section-lead mx-auto">
-                {t("Команда титулованных профессионалов, готовых воплотить вашу идею.")}
+                {t("Команда титулованных профессионалов, готова воплотить вашу идею.")}
               </p>
             </div>
           </Reveal>
@@ -293,9 +293,9 @@ export function HomePage() {
                 {Array.from({ length: 4 }).map((_, i) => (
                   <div
                     key={i}
-                    className="snap-center shrink-0 w-[280px] flex flex-col items-center"
+                    className="snap-center shrink-0 w-[280px] flex flex-col items-center animate-pulse"
                   >
-                    <div className="size-48 rounded-full bg-rose-100 mb-6 animate-pulse" />
+                    <div className="size-48 rounded-full bg-rose-100 mb-6" />
                     <div className="h-6 w-40 bg-rose-100 rounded mb-2" />
                     <div className="h-4 w-32 bg-rose-100 rounded" />
                   </div>

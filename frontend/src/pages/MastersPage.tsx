@@ -9,6 +9,40 @@ import { Avatar } from "../components/Avatar"
 import { Star } from "lucide-react"
 import { ShareButtons } from "../components/ShareButtons"
 
+function MasterCardSkeleton() {
+  return (
+    <div className="flex flex-col items-center bg-white rounded-3xl p-8 border border-rose-100 shadow-sm animate-pulse">
+      {/* Круглый аватар с рамкой */}
+      <div className="size-48 rounded-full p-2 border border-rose-100 mb-6 bg-rose-50" />
+      
+      {/* Имя */}
+      <div className="h-8 w-3/4 bg-rose-100 rounded-md mb-2" />
+      
+      {/* Специализация */}
+      <div className="h-4 w-1/2 bg-rose-100 rounded-md mb-4" />
+      
+      {/* Ссылка на отзывы */}
+      <div className="h-4 w-24 bg-rose-100 rounded-md mb-4" />
+      
+      {/* Цитата (две строки) */}
+      <div className="w-full space-y-2 mb-8 flex-1">
+        <div className="h-4 w-full bg-rose-100 rounded-md" />
+        <div className="h-4 w-5/6 bg-rose-100 rounded-md mx-auto" />
+      </div>
+      
+      {/* Кнопки "Поделиться" */}
+      <div className="flex gap-2 mb-4">
+        <div className="size-8 rounded-full bg-rose-100" />
+        <div className="size-8 rounded-full bg-rose-100" />
+        <div className="size-8 rounded-full bg-rose-100" />
+      </div>
+
+      {/* Кнопка "Профиль / Записаться" */}
+      <div className="h-12 w-full bg-rose-100 rounded-full" />
+    </div>
+  )
+}
+
 export function MastersPage() {
   const { openBooking } = useOutletContext<{ openBooking: () => void }>()
 
@@ -39,76 +73,80 @@ export function MastersPage() {
       </div>
 
       <div className="max-w-7xl mx-auto px-6 pt-16">
-        {loading && (
-          <p className="text-center text-muted-foreground">{t("Загрузка…")}</p>
-        )}
-
         {error && <ErrorMessage error={error} onRetry={reload} />}
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
-          {MASTERS.map((master) => (
-            <div
-              key={master.id}
-              id={`master-${master.id}`}
-              className={`flex flex-col items-center bg-white rounded-3xl p-8 border border-rose-100 shadow-sm hover:shadow-xl hover:border-gold/30 transition-all duration-300 group${
-                active === master.id ? " ring-2 ring-gold ring-offset-4 ring-offset-pearl" : ""
-              }`}
-            >
-              <div className="size-48 rounded-full p-2 border border-gold mb-6 relative">
-                {master.rating && (
-                  <div className="absolute -top-3 -right-3 bg-white p-2 rounded-full shadow-sm">
-                    <div className="flex items-center gap-1 bg-rose-50 px-3 py-1 rounded-full text-gold font-medium text-sm">
-                      <Star className="size-4 fill-gold text-gold" />
-                      {master.rating}
+        {loading ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <MasterCardSkeleton key={i} />
+            ))}
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
+            {MASTERS.map((master) => (
+              <div
+                key={master.id}
+                id={`master-${master.id}`}
+                className={`flex flex-col items-center bg-white rounded-3xl p-8 border border-rose-100 shadow-sm hover:shadow-xl hover:border-gold/30 transition-all duration-300 group${
+                  active === master.id ? " ring-2 ring-gold ring-offset-4 ring-offset-pearl" : ""
+                }`}
+              >
+                <div className="size-48 rounded-full p-2 border border-gold mb-6 relative">
+                  {master.rating && (
+                    <div className="absolute -top-3 -right-3 bg-white p-2 rounded-full shadow-sm">
+                      <div className="flex items-center gap-1 bg-rose-50 px-3 py-1 rounded-full text-gold font-medium text-sm">
+                        <Star className="size-4 fill-gold text-gold" />
+                        {master.rating}
+                      </div>
                     </div>
+                  )}
+
+                  <div className="size-full rounded-full overflow-hidden bg-rose-100">
+                    <Avatar
+                      src={master.image}
+                      name={master.name}
+                      className="size-full text-5xl font-serif group-hover:scale-105 transition-transform duration-700"
+                    />
                   </div>
+                </div>
+
+                <h3 className="text-2xl font-serif text-foreground mb-1">
+                  {master.name}
+                </h3>
+
+                <p className="text-sm font-medium text-gold/80 mb-2">
+                  {master.role}
+                </p>
+
+                {master.reviews > 0 ? (
+                  <NavLink to={`/reviews?master=${master.id}`} className="text-sm text-gold-dark hover:underline mb-4">
+                    {t("Отзывы")} ({master.reviews})
+                  </NavLink>
+                ) : (
+                  <span className="mb-4" />
                 )}
 
-                <div className="size-full rounded-full overflow-hidden bg-rose-100">
-                  <Avatar
-                    src={master.image}
-                    name={master.name}
-                    className="size-full text-5xl font-serif group-hover:scale-105 transition-transform duration-700"
+                <p className="text-muted-foreground text-center text-sm italic mb-8 flex-1">
+                  {master.quote && `"${master.quote}"`}
+                </p>
+
+                <div className="mb-4">
+                  <ShareButtons
+                    url={`${window.location.origin}/masters`}
+                    title={master.name}
                   />
                 </div>
+
+                <button
+                  onClick={openBooking}
+                  className="w-full border-2 border-gold text-gold font-medium hover:bg-gold hover:text-white px-6 py-3 rounded-full transition-colors"
+                >
+                  {t("Профиль / Записаться")}
+                </button>
               </div>
-
-              <h3 className="text-2xl font-serif text-foreground mb-1">
-                {master.name}
-              </h3>
-
-              <p className="text-sm font-medium text-gold/80 mb-2">
-                {master.role}
-              </p>
-
-              {master.reviews > 0 ? (
-                <NavLink to={`/reviews?master=${master.id}`} className="text-sm text-gold-dark hover:underline mb-4">
-                  {t("Отзывы")} ({master.reviews})
-                </NavLink>
-              ) : (
-                <span className="mb-4" />
-              )}
-
-              <p className="text-muted-foreground text-center text-sm italic mb-8 flex-1">
-                {master.quote && `"${master.quote}"`}
-              </p>
-
-              <div className="mb-4">
-                <ShareButtons
-                  url={`${window.location.origin}/masters`}
-                  title={master.name}
-                />
-              </div>
-
-              <button
-                onClick={openBooking}
-                className="w-full border-2 border-gold text-gold font-medium hover:bg-gold hover:text-white px-6 py-3 rounded-full transition-colors"
-              >
-                {t("Профиль / Записаться")}
-              </button>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   )

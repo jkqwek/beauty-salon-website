@@ -7,6 +7,9 @@ class ExpenseSerializer(serializers.ModelSerializer):
         fields = "__all__"
 
 class StockItemSerializer(serializers.ModelSerializer):
+    is_low = serializers.BooleanField(read_only=True)
+    category_label = serializers.CharField(source="get_category_display", read_only=True)
+
     class Meta:
         model = StockItem
         fields = "__all__"

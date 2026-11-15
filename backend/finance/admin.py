@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import StockItem
+from .models import StockItem, Expense
 
 
 @admin.register(StockItem)
@@ -11,4 +11,11 @@ class StockItemAdmin(admin.ModelAdmin):
 
     @admin.display(boolean=True, description="Заканчивается")
     def is_low(self, obj):
-        return obj.quantity <= obj.min_quantity
+        return obj.is_low
+
+@admin.register(Expense)
+class ExpenseAdmin(admin.ModelAdmin):
+    list_display = ("date", "category", "amount")
+    list_filter = ("category",)
+    search_fields = ("category", "description")
+

@@ -339,6 +339,17 @@ export interface Expense {
   created_at: string
 }
 
+export interface StockItem {
+  id: number
+  name: string
+  category: "cosmetics" | "consumables"
+  category_label: string
+  quantity: number
+  unit: string
+  min_quantity: number
+  is_low: boolean
+}
+
 export interface RevenueReportRow {
   period: string
   revenue: string
@@ -390,6 +401,10 @@ export const financeApi = {
     api<Expense>(`/finance/expenses/${id}/`, { method: "PATCH", body: data }),
   deleteExpense: (id: number) =>
     api<void>(`/finance/expenses/${id}/`, { method: "DELETE" }),
+
+  stock: () => api<StockItem[]>("/finance/stock/"),
+  setStockQuantity: (id: number, quantity: number) =>
+    api<StockItem>(`/finance/stock/${id}/`, { method: "PATCH", body: { quantity } }),
 
   incomeSummary: (params: DateRangeParams = {}) =>
     api<IncomeSummary>(`/finance/imcome-summary/${toQueryString(params)}`),

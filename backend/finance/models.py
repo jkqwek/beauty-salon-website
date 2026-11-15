@@ -34,3 +34,8 @@ class StockItem(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.quantity} {self.unit})"
+    
+    @property
+    def is_low(self):
+        """Остаток на пороге или ниже: пора заказывать."""
+        return self.quantity <= self.min_quantity

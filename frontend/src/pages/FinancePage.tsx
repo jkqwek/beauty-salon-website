@@ -1,7 +1,7 @@
 // pages/FinancePage.tsx
 import { useState } from "react"
-import { Download } from "lucide-react"
-import { financeApi } from "@/api/api"
+import { Download, Minus, Plus } from "lucide-react"
+import { financeApi, type StockItem } from "@/api/api"
 import { toApiError, type ApiError } from "@/api/client"
 import { useApi } from "@/api/useApi"
 import { ErrorMessage } from "../components/ErrorMessage"
@@ -92,6 +92,28 @@ export function FinancePage() {
       setExportError(toApiError(e))
     } finally {
       setExporting(false)
+    }
+  }
+
+  const stock = useApi(() => financeApi.stock(), [])
+  const [stockPatch, setStockPatch] = useState<Record<number, StockItem>>({}) // обновлённые позиции без перезагрузки списка
+  const [stockBusy, setStockBusy] = useState<number | null>(null)
+  const [stockError, setStockError] = useState<ApiError | null>(null)
+  const stockItems = (stock.data ?? []).map((i) => stockPatch[i.id] ?? i)
+  const lowCount = stockItems.filter((i) => i.is_low).length
+
+  const changeStock = async (item: StockItem, delta: number) => {
+    const quantity = item.quantity + delta
+    if (quantity < 0) return
+    setStockBusy(item.id)
+    setStockError(null)
+    try {
+      const updated = await financeApi.setStockQuantity(item.id, quantity)
+      setStockPatch((p) => ({ ...p, [updated.id]: updated }))
+    } catch (e) {
+      setStockError(toApiError(e))
+    } finally {
+      setStockBusy(null)
     }
   }
 
@@ -291,6 +313,84 @@ export function FinancePage() {
                 </div>
               )}
             </>
+          )}
+
+          {/* склад: косметика и расходные материалы */}
+          <div className="flex flex-wrap items-baseline justify-between gap-2 mb-4">
+            <h2 className="text-xl font-serif text-foreground">Склад</h2>
+            {lowCount > 0 && <p className="text-sm font-medium text-rose-600">Пора заказать: {lowCount}</p>}
+          </div>
+          {stock.loading && <p className="text-muted-foreground mb-8">Загрузка…</p>}
+          {stock.error && (
+            <div className="mb-8">
+              <ErrorMessage error={stock.error} onRetry={() => { setStockPatch({}); stock.reload() }} />
+            </div>
+          )}
+          {stockError && (
+            <div className="mb-4">
+              <ErrorMessage error={stockError} />
+            </div>
+          )}
+          {!stock.loading && !stock.error && stockItems.length === 0 && (
+            <p className="text-muted-foreground mb-8">Позиций на складе пока нет. Их можно добавить в панели /admin/.</p>
+          )}
+          {stockItems.length > 0 && (
+            <div className={`${tableWrap} mb-8`}>
+              <table className="w-full text-sm">
+                <thead className="bg-rose-50 text-muted-foreground text-left">
+                  <tr>
+                    <th className="p-4">Название</th>
+                    <th className="p-4">Категория</th>
+                    <th className="p-4">Остаток</th>
+                    <th className="p-4">Минимум</th>
+                    <th className="p-4">Статус</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {stockItems.map((item) => (
+                    <tr key={item.id} className={`border-t border-rose-50 ${item.is_low ? "bg-rose-50/60" : ""}`}>
+                      <td className="p-4">{item.name}</td>
+                      <td className="p-4">{item.category_label}</td>
+                      <td className="p-4">
+                        <div className="flex items-center gap-2 whitespace-nowrap">
+                          <button
+                            onClick={() => changeStock(item, -1)}
+                            disabled={item.quantity === 0 || stockBusy === item.id}
+                            aria-label={`Уменьшить остаток: ${item.name}`}
+                            className="size-9 rounded-full border border-rose-200 flex items-center justify-center text-muted-foreground hover:border-gold hover:text-gold-dark transition-colors disabled:opacity-40 disabled:pointer-events-none"
+                          >
+                            <Minus className="size-4" />
+                          </button>
+                          <span className="min-w-16 text-center tabular-nums">
+                            {item.quantity} {item.unit}
+                          </span>
+                          <button
+                            onClick={() => changeStock(item, 1)}
+                            disabled={stockBusy === item.id}
+                            aria-label={`Увеличить остаток: ${item.name}`}
+                            className="size-9 rounded-full border border-rose-200 flex items-center justify-center text-muted-foreground hover:border-gold hover:text-gold-dark transition-colors disabled:opacity-40 disabled:pointer-events-none"
+                          >
+                            <Plus className="size-4" />
+                          </button>
+                        </div>
+                      </td>
+                      <td className="p-4 whitespace-nowrap">
+                        {item.min_quantity} {item.unit}
+                      </td>
+                      <td className="p-4">
+                        {item.is_low ? (
+                          <span className="inline-block px-3 py-1 rounded-full border border-rose-200 bg-rose-50 text-rose-700 text-xs font-medium whitespace-nowrap">
+                            Пора заказать
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">В наличии</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
 
           {/* таблица расходов */}

@@ -14,6 +14,7 @@ import { ImageWithFallback } from "../components/ImageWithFallback"
 import { Check, Clock, Download, Scale } from "lucide-react"
 import { ShareButtons } from "../components/ShareButtons"
 import { SuggestServiceForm } from "../components/SuggestServiceForm"
+import { ColoringCalculator } from "../components/ColoringCalculator"
 
 import { TagChips, tagName } from "../components/TagChips"
 import { toast } from "../components/Toast"
@@ -226,6 +227,11 @@ export function ServicesPage() {
           ))}
         </div>
         
+        {/* Калькулятор окрашивания */}
+        <div className="mt-16">
+          <ColoringCalculator onBook={openBooking} />
+        </div>
+
         {/* Предложить услугу */}
         <div className="mt-16">
           <SuggestServiceForm />

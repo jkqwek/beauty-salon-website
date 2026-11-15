@@ -18,12 +18,10 @@
 
   --color-gold: #d4af37;
   --color-gold-hover: #e3be47;
-  --color-gold-dark: #8a6a15; /* золото для мелкого текста на светлом фоне: контраст ≥ 4.5 */
+  --color-gold-dark: #8a6a15;
 
   --color-pearl: #fcfcfc;
 
-  /* Semantic tokens. These must live in @theme (not :root) or Tailwind v4
-     never generates the text-foreground / text-muted-foreground utilities. */
   --color-background: var(--color-pearl);
   --color-foreground: #222222;
   --color-primary: var(--color-gold);
@@ -68,12 +66,17 @@ h6,
 }
 
 .text-gold-gradient {
-  background: linear-gradient(135deg, #f3e5ab, #e9cf73); /* светлое золото — для тёмного фона hero */
+  background: linear-gradient(135deg, #f3e5ab, #e9cf73);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
 }
 
 @layer base {
+  html {
+    scroll-behavior: smooth;
+    scroll-padding-top: 100px;
+  }
+
   body {
     line-height: 1.6;
   }

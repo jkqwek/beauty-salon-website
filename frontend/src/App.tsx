@@ -29,6 +29,7 @@ import { SiteSearch } from "./components/SiteSearch"
 import { Toaster, toast } from "./components/Toast"
 import { formatDayMonth, formatTime, hoursUntil, relativeDay } from "./lib/format"
 import { BugReportModal } from "./components/BugReportModal"
+import { ScrollToHash } from "./components/ScrollToHash"
 
 function Layout() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
@@ -41,7 +42,6 @@ function Layout() {
   const [bugReportOpen, setBugReportOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
 
-  // запись в ближайшие 24 часа — золотая точка на аватаре и в мобильном меню
   const next = user?.next_booking
   const soon =
     next && hoursUntil(next.date, next.start_time) <= 24
@@ -51,10 +51,8 @@ function Layout() {
     <span className="absolute top-0 right-0 size-3 rounded-full bg-gold ring-2 ring-pearl" aria-hidden="true" />
   )
 
-  // Запись только для вошедших: гостю сначала показываем вход
   const openBooking = () => setBookingOpen(true)
 
-  // «Записаться снова» из истории визитов
   const rebook = (prefill: BookingPrefill) => {
     setBookingPrefill(prefill)
     openBooking()
@@ -63,206 +61,73 @@ function Layout() {
   const closeBooking = () => {
     setBookingOpen(false)
     setBookingPrefill(null)
-    if (user) refreshUser() // новая запись могла стать ближайшей
+    if (user) refreshUser()
   }
 
   return (
     <div className="min-h-screen flex flex-col relative overflow-x-clip bg-pearl text-foreground selection:bg-gold/20 selection:text-gold">
+      <ScrollToHash /> 
+
       {/* Header */}
       <header className="sticky top-0 z-50 w-full bg-pearl/90 backdrop-blur-md border-b border-rose-100/50">
-        {/* Сетка из трёх равных колонок: логотип слева, меню в центре, действия справа */}
         <div className="max-w-7xl mx-auto px-6 h-20 grid grid-cols-[1fr_auto_1fr] items-center gap-4">
-          {/* Логотип */}
-          <NavLink
-            to="/"
-            className="text-2xl font-serif text-gold flex items-center gap-2 justify-self-start"
-          >
+          <NavLink to="/" className="text-2xl font-serif text-gold flex items-center gap-2 justify-self-start">
             <Sparkles className="size-5" />
             <span>Allure</span>
           </NavLink>
 
-          {/* Меню — по центру страницы */}
           <nav className="hidden lg:flex items-center justify-center gap-8">
-            <NavLink
-              to="/"
-              className={({ isActive }) =>
-                `text-sm font-medium whitespace-nowrap transition-colors hover:text-gold ${
-                  isActive ? "text-gold" : "text-muted-foreground"
-                }`
-              }
-            >
-              {t("Главная")}
-            </NavLink>
-            <NavLink
-              to="/services"
-              className={({ isActive }) =>
-                `text-sm font-medium whitespace-nowrap transition-colors hover:text-gold ${
-                  isActive ? "text-gold" : "text-muted-foreground"
-                }`
-              }
-            >
-              {t("Услуги")}
-            </NavLink>
-            <NavLink
-              to="/masters"
-              className={({ isActive }) =>
-                `text-sm font-medium whitespace-nowrap transition-colors hover:text-gold ${
-                  isActive ? "text-gold" : "text-muted-foreground"
-                }`
-              }
-            >
-              {t("Мастера")}
-            </NavLink>
-            <NavLink
-              to="/reviews"
-              className={({ isActive }) =>
-                `text-sm font-medium whitespace-nowrap transition-colors hover:text-gold ${
-                  isActive ? "text-gold" : "text-muted-foreground"
-                }`
-              }
-            >
-              {t("Отзывы")}
-            </NavLink>
-            <NavLink
-              to="/about"
-              className={({ isActive }) =>
-                `text-sm font-medium whitespace-nowrap transition-colors hover:text-gold ${
-                  isActive ? "text-gold" : "text-muted-foreground"
-                }`
-              }
-            >
-              {t("О нас")}
-            </NavLink>
+            <NavLink to="/" className={({ isActive }) => `text-sm font-medium whitespace-nowrap transition-colors hover:text-gold ${isActive ? "text-gold" : "text-muted-foreground"}`}>{t("Главная")}</NavLink>
+            <NavLink to="/services" className={({ isActive }) => `text-sm font-medium whitespace-nowrap transition-colors hover:text-gold ${isActive ? "text-gold" : "text-muted-foreground"}`}>{t("Услуги")}</NavLink>
+            <NavLink to="/masters" className={({ isActive }) => `text-sm font-medium whitespace-nowrap transition-colors hover:text-gold ${isActive ? "text-gold" : "text-muted-foreground"}`}>{t("Мастера")}</NavLink>
+            <NavLink to="/reviews" className={({ isActive }) => `text-sm font-medium whitespace-nowrap transition-colors hover:text-gold ${isActive ? "text-gold" : "text-muted-foreground"}`}>{t("Отзывы")}</NavLink>
+            <NavLink to="/about" className={({ isActive }) => `text-sm font-medium whitespace-nowrap transition-colors hover:text-gold ${isActive ? "text-gold" : "text-muted-foreground"}`}>{t("О нас")}</NavLink>
             {user?.is_staff && (
-              <NavLink
-                to="/panel"
-                className={({ isActive }) =>
-                  `text-sm font-medium whitespace-nowrap transition-colors hover:text-gold ${
-                    isActive ? "text-gold" : "text-muted-foreground"
-                  }`
-                }
-              >
-                {t("Панель")}
-              </NavLink>
+              <NavLink to="/panel" className={({ isActive }) => `text-sm font-medium whitespace-nowrap transition-colors hover:text-gold ${isActive ? "text-gold" : "text-muted-foreground"}`}>{t("Панель")}</NavLink>
             )}
           </nav>
 
-          {/* Действия — прижаты вправо */}
           <div className="hidden lg:flex items-center gap-3 xl:gap-4 justify-self-end">
-            <button
-              onClick={() => setSearchOpen(true)}
-              title={t("Поиск по услугам и мастерам")}
-              aria-label={t("Поиск")}
-              className="p-2 text-muted-foreground hover:text-gold transition-colors"
-            >
+            <button onClick={() => setSearchOpen(true)} title={t("Поиск по услугам и мастерам")} aria-label={t("Поиск")} className="p-2 text-muted-foreground hover:text-gold transition-colors">
               <Search className="size-5" />
             </button>
             <LangSwitch />
             {user ? (
               <>
-                <NavLink
-                  to="/profile"
-                  title={soon ?? t("Личный кабинет")}
-                  aria-label={soon ? `${t("Личный кабинет")}. ${soon}` : t("Личный кабинет")}
-                  className="relative rounded-full hover:ring-2 hover:ring-gold/40 transition-shadow"
-                >
-                  <Avatar
-                    src={user.avatar}
-                    name={[user.first_name, user.last_name].filter(Boolean).join(" ") || user.username}
-                    className="size-9 text-xs"
-                  />
+                <NavLink to="/profile" title={soon ?? t("Личный кабинет")} aria-label={soon ? `${t("Личный кабинет")}. ${soon}` : t("Личный кабинет")} className="relative rounded-full hover:ring-2 hover:ring-gold/40 transition-shadow">
+                  <Avatar src={user.avatar} name={[user.first_name, user.last_name].filter(Boolean).join(" ") || user.username} className="size-9 text-xs" />
                   {soon && dot}
                 </NavLink>
-                <button
-                  onClick={() => setLogoutOpen(true)}
-                  title={t("Выйти")}
-                  className="p-2 text-muted-foreground hover:text-gold transition-colors"
-                >
+                <button onClick={() => setLogoutOpen(true)} title={t("Выйти")} className="p-2 text-muted-foreground hover:text-gold transition-colors">
                   <LogOut className="size-5" />
                 </button>
               </>
             ) : (
-              <button
-                onClick={() => setAuthOpen(true)}
-                className="text-sm font-medium text-muted-foreground hover:text-gold transition-colors whitespace-nowrap"
-              >
+              <button onClick={() => setAuthOpen(true)} className="text-sm font-medium text-muted-foreground hover:text-gold transition-colors whitespace-nowrap">
                 {t("Войти")}
               </button>
             )}
-            <button
-              onClick={openBooking}
-              className="bg-gold hover:bg-gold-hover text-white px-6 py-2.5 rounded-full text-sm font-medium transition-all shadow-sm hover:shadow-md whitespace-nowrap"
-            >
+            <button onClick={openBooking} className="bg-gold hover:bg-gold-hover text-white px-6 py-2.5 rounded-full text-sm font-medium transition-all shadow-sm hover:shadow-md whitespace-nowrap">
               {t("Записаться")}
             </button>
           </div>
 
-          {/* Мобильный бургер — прижат вправо */}
-          <button
-            className="lg:hidden p-2 text-muted-foreground justify-self-end col-start-3"
-            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            aria-label={t("Меню")}
-          >
-            {mobileMenuOpen ? (
-              <X className="size-6" />
-            ) : (
-              <Menu className="size-6" />
-            )}
+          <button className="lg:hidden p-2 text-muted-foreground justify-self-end col-start-3" onClick={() => setMobileMenuOpen(!mobileMenuOpen)} aria-label={t("Меню")}>
+            {mobileMenuOpen ? <X className="size-6" /> : <Menu className="size-6" />}
           </button>
         </div>
 
-        {/* Mobile menu */}
         {mobileMenuOpen && (
           <div className="lg:hidden absolute top-20 left-0 w-full bg-pearl border-b border-rose-100 p-6 flex flex-col gap-4 shadow-lg">
-            <button
-              onClick={() => {
-                setSearchOpen(true)
-                setMobileMenuOpen(false)
-              }}
-              className="text-lg font-medium text-foreground text-left flex items-center gap-2"
-            >
+            <button onClick={() => { setSearchOpen(true); setMobileMenuOpen(false); }} className="text-lg font-medium text-foreground text-left flex items-center gap-2">
               <Search className="size-5" /> {t("Поиск")}
             </button>
-            <NavLink
-              to="/"
-              onClick={() => setMobileMenuOpen(false)}
-              className="text-lg font-medium text-foreground"
-            >
-              {t("Главная")}
-            </NavLink>
-            <NavLink
-              to="/services"
-              onClick={() => setMobileMenuOpen(false)}
-              className="text-lg font-medium text-foreground"
-            >
-              {t("Услуги")}
-            </NavLink>
-            <NavLink
-              to="/masters"
-              onClick={() => setMobileMenuOpen(false)}
-              className="text-lg font-medium text-foreground"
-            >
-              {t("Мастера")}
-            </NavLink>
-            <NavLink
-              to="/reviews"
-              onClick={() => setMobileMenuOpen(false)}
-              className="text-lg font-medium text-foreground"
-            >
-              {t("Отзывы")}
-            </NavLink>
-            <NavLink
-              to="/about"
-              onClick={() => setMobileMenuOpen(false)}
-              className="text-lg font-medium text-foreground"
-            >
-              {t("О нас")}
-            </NavLink>
-            <NavLink
-              to="/profile"
-              onClick={() => setMobileMenuOpen(false)}
-              className="text-lg font-medium text-foreground flex items-center gap-2"
-            >
+            <NavLink to="/" onClick={() => setMobileMenuOpen(false)} className="text-lg font-medium text-foreground">{t("Главная")}</NavLink>
+            <NavLink to="/services" onClick={() => setMobileMenuOpen(false)} className="text-lg font-medium text-foreground">{t("Услуги")}</NavLink>
+            <NavLink to="/masters" onClick={() => setMobileMenuOpen(false)} className="text-lg font-medium text-foreground">{t("Мастера")}</NavLink>
+            <NavLink to="/reviews" onClick={() => setMobileMenuOpen(false)} className="text-lg font-medium text-foreground">{t("Отзывы")}</NavLink>
+            <NavLink to="/about" onClick={() => setMobileMenuOpen(false)} className="text-lg font-medium text-foreground">{t("О нас")}</NavLink>
+            <NavLink to="/profile" onClick={() => setMobileMenuOpen(false)} className="text-lg font-medium text-foreground flex items-center gap-2">
               {t("Профиль")}
               {soon && (
                 <span className="flex items-center gap-1.5 text-sm font-normal text-gold-dark">
@@ -272,43 +137,15 @@ function Layout() {
               )}
             </NavLink>
             {user?.is_staff && (
-              <NavLink
-                to="/panel"
-                onClick={() => setMobileMenuOpen(false)}
-                className="text-lg font-medium text-foreground"
-              >
-                {t("Панель")}
-              </NavLink>
+              <NavLink to="/panel" onClick={() => setMobileMenuOpen(false)} className="text-lg font-medium text-foreground">{t("Панель")}</NavLink>
             )}
             <LangSwitch className="text-lg text-foreground" />
             {user ? (
-              <button
-                onClick={() => {
-                  setLogoutOpen(true)
-                  setMobileMenuOpen(false)
-                }}
-                className="text-lg font-medium text-foreground text-left"
-              >
-                {t("Выйти")}
-              </button>
+              <button onClick={() => { setLogoutOpen(true); setMobileMenuOpen(false); }} className="text-lg font-medium text-foreground text-left">{t("Выйти")}</button>
             ) : (
-              <button
-                onClick={() => {
-                  setAuthOpen(true)
-                  setMobileMenuOpen(false)
-                }}
-                className="text-lg font-medium text-foreground text-left"
-              >
-                {t("Войти")}
-              </button>
+              <button onClick={() => { setAuthOpen(true); setMobileMenuOpen(false); }} className="text-lg font-medium text-foreground text-left">{t("Войти")}</button>
             )}
-            <button
-              onClick={() => {
-                openBooking()
-                setMobileMenuOpen(false)
-              }}
-              className="bg-gold text-white px-6 py-3 rounded-full text-center font-medium mt-4"
-            >
+            <button onClick={() => { openBooking(); setMobileMenuOpen(false); }} className="bg-gold text-white px-6 py-3 rounded-full text-center font-medium mt-4">
               {t("Записаться")}
             </button>
           </div>
@@ -321,60 +158,44 @@ function Layout() {
 
       {/* Footer */}
       <footer className="bg-rose-50 border-t border-rose-100 py-12 px-6">
-        {/* Используем grid для идеального выравнивания: 1fr (лого) - 1fr (текст) - 1fr (ссылки) */}
         <div className="max-w-7xl mx-auto flex flex-col md:grid md:grid-cols-3 items-center gap-6 md:gap-0">
-          
-          {/* Логотип (слева) */}
           <div className="flex justify-center md:justify-self-start">
             <div className="text-xl font-serif text-gold flex items-center gap-2">
               <Sparkles className="size-5" />
               Allure
             </div>
           </div>
-
-          {/* Копирайт (строго по центру) */}
           <p className="text-muted-foreground text-sm text-center md:justify-self-center">
             {t("© 2026 Allure Beauty Salon. Все права защищены.")}
           </p>
+          
+          <div className="flex flex-wrap justify-center md:justify-end items-center gap-x-4 gap-y-3 text-sm text-muted-foreground">
+            {/* Навигация */}
+            <NavLink to="/about" className="hover:text-gold transition-colors">{t("О нас")}</NavLink>
+            <NavLink to="/vacancies" className="hover:text-gold transition-colors">{t("Вакансии")}</NavLink>
+            <NavLink to="/partners" className="hover:text-gold transition-colors">{t("Партнёрам")}</NavLink>
+            <NavLink to="/#location" className="hover:text-gold transition-colors">{t("Как добраться")}</NavLink>
 
-          {/* Ссылки (справа) */}
-          <div className="flex flex-wrap justify-center md:justify-self-end gap-x-4 gap-y-2 items-center">
-            <NavLink to="/about" className="text-sm text-muted-foreground hover:text-gold transition-colors">
-              {t("О нас")}
-            </NavLink>
-            <NavLink to="/vacancies" className="text-sm text-muted-foreground hover:text-gold transition-colors">
-              {t("Вакансии")}
-            </NavLink>
-            <NavLink to="/partners" className="text-sm text-muted-foreground hover:text-gold transition-colors">
-              {t("Партнёрам")}
-            </NavLink>
-            <span className="text-sm text-muted-foreground hover:text-gold cursor-pointer transition-colors">
-              {t("ВКонтакте")}
-            </span>
-            <span className="text-sm text-muted-foreground hover:text-gold cursor-pointer transition-colors">
-              Telegram
-            </span>
+            <div className="flex gap-x-4 items-center">
+              <span className="hover:text-gold cursor-pointer transition-colors">{t("ВКонтакте")}</span>
+              <span className="hover:text-gold cursor-pointer transition-colors">Telegram</span>
+            </div>
 
             <button
               onClick={() => setBugReportOpen(true)}
-              className="text-sm text-muted-foreground hover:text-rose-500 transition-colors border-l border-rose-200 pl-4 ml-2"
+              className="hover:text-rose-500 transition-colors md:border-l border-rose-200 md:pl-4"
             >
               {t("Сообщить об ошибке")}
             </button>
           </div>
-          
         </div>
       </footer>
 
-      {/* Sticky Book Now Button (Mobile primarily, or floating) */}
-      <button
-        onClick={openBooking}
-        className="fixed bottom-6 right-6 lg:hidden z-50 bg-gold text-white p-4 rounded-full shadow-lg hover:bg-gold-hover transition-transform hover:scale-105 active:scale-95"
-      >
+      {/* Sticky Book Now Button */}
+      <button onClick={openBooking} className="fixed bottom-6 right-6 lg:hidden z-50 bg-gold text-white p-4 rounded-full shadow-lg hover:bg-gold-hover transition-transform hover:scale-105 active:scale-95">
         <Calendar className="size-6" />
       </button>
 
-      {/* Back to top */}
       <BackToTopButton />
 
       {/* Booking Modal */}
@@ -425,7 +246,6 @@ function Layout() {
       <CompareBar />
       <Toaster />
 
-      {/* Auth Modal */}
       {authOpen && (
         <AuthModal
           onClose={() => {
@@ -442,9 +262,7 @@ function Layout() {
         />
       )}
 
-      {/* Bug Report Modal */}
       {bugReportOpen && <BugReportModal onClose={() => setBugReportOpen(false)} />}
-      
     </div>
   )
 }
@@ -479,7 +297,6 @@ export default function App() {
   )
 }
 
-/** Переключатель языка RU / EN */
 function LangSwitch({ className = "text-sm" }: { className?: string }) {
   const { lang, setLang } = useLang()
   return (

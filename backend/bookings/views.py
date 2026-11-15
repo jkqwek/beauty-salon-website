@@ -33,6 +33,8 @@ from django.utils import timezone
 from catalog.permissions import IsAdminUser
 from config.pagination import OptionalPagination
 
+from django.http import HttpResponse
+from .receipts import build_receipt_pdf
 
 def _int_param(params, name):
     value = params.get(name)
@@ -589,3 +591,17 @@ def today_stats(request):
         "by_status": by_status,
         "expected_revenue": str(revenue.quantize(Decimal("0.01"))),
     })
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def booking_receipt(request, booking_id):
+    """PDF-чек по выполненной записи: клиенту только по своей, сотруднику по любой (в том числе гостевой)."""
+    bookings = Booking.objects.select_related("service", "employee", "client", "promo_code")
+    if not request.user.is_staff:
+        bookings = bookings.filter(client=request.user)
+    booking = get_object_or_404(bookings, pk=booking_id)
+    if booking.status != "completed":
+        raise ValidationError("Чек доступен только после выполнения записи.")
+    response = HttpResponse(build_receipt_pdf(booking), content_type="application/pdf")
+    response["Content-Disposition"] = f'attachment; filename="allure-receipt-{booking.pk:06d}.pdf"'
+    return response

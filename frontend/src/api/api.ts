@@ -1,4 +1,4 @@
-import { api } from "./client"
+import { api, downloadFile } from "./client"
 
 export interface User {
   id: number
@@ -221,6 +221,9 @@ export const bookingApi = {
   my: () => api<Booking[]>("/bookings/my/"),
   cancel: (id: number) => api<Booking>(`/bookings/${id}/cancel/`, { method: "POST" }),
   cancellationPolicy: () => api<CancellationPolicy>("/bookings/cancellation-policy/"),
+
+  downloadReceipt: (id: number) =>
+    downloadFile(`/bookings/${id}/receipt/`, `allure-receipt-${String(id).padStart(6, "0")}.pdf`),
 }
 
 export interface CancellationPolicy {
@@ -376,6 +379,10 @@ function toQueryString(params: object) {
 }
 
 export const financeApi = {
+  exportExcel: (params: DateRangeParams = {}) => {
+    const period = [params.date_from, params.date_to].filter(Boolean).join("_") || "all"
+    return downloadFile(`/finance/export/${toQueryString(params)}`, `allure-finance-${period}.xlsx`)
+  },
   expenses: () => api<Expense[]>("/finance/expenses/"),
   createExpense: (data: Omit<Expense, "id" | "created_at">) =>
     api<Expense>("/finance/expenses/", { method: "POST", body: data }),

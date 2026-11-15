@@ -1,5 +1,8 @@
 // pages/FinancePage.tsx
+import { useState } from "react"
+import { Download } from "lucide-react"
 import { financeApi } from "@/api/api"
+import { toApiError, type ApiError } from "@/api/client"
 import { useApi } from "@/api/useApi"
 import { ErrorMessage } from "../components/ErrorMessage"
 import { formatPrice } from "@/lib/format"
@@ -15,6 +18,8 @@ import {
 } from "recharts"
 
 const tableWrap = "bg-white rounded-3xl border border-rose-100 overflow-x-auto"
+const dateInput =
+  "rounded-xl border border-rose-200 bg-white px-4 py-2.5 text-sm text-foreground focus:outline-none focus:border-gold focus:ring-1 focus:ring-gold"
 
 /** Таблица «название — отмен — потеряно» для разбивки по услугам и по мастерам */
 function LostTable({
@@ -52,21 +57,85 @@ function LostTable({
 }
 
 export function FinancePage() {
-  const revenue = useApi(() => financeApi.revenueReport({ group_by: "month" }), [])
-  const workload = useApi(() => financeApi.employeeWorkload(), [])
-  const income = useApi(() => financeApi.incomeSummary(), [])
+  // период: одни и те же даты идут во все отчёты и в выгрузку, поэтому экран и файл совпадают
+  const [from, setFrom] = useState("")
+  const [to, setTo] = useState("")
+  const badRange = Boolean(from && to && to < from)
+  const params = badRange ? {} : { date_from: from || undefined, date_to: to || undefined }
+
+  const [exporting, setExporting] = useState(false)
+  const [exportError, setExportError] = useState<ApiError | null>(null)
+
+  const revenue = useApi(() => financeApi.revenueReport({ ...params, group_by: "month" }), [from, to])
+  const workload = useApi(() => financeApi.employeeWorkload(params), [from, to])
+  const income = useApi(() => financeApi.incomeSummary(params), [from, to])
   const expenses = useApi(() => financeApi.expenses(), [])
-  const popular = useApi(() => financeApi.popularServices(), [])
-  const cancelled = useApi(() => financeApi.cancellations(), [])
+  const popular = useApi(() => financeApi.popularServices(params), [from, to])
+  const cancelled = useApi(() => financeApi.cancellations(params), [from, to])
 
   const loading =
     revenue.loading || workload.loading || income.loading || expenses.loading || popular.loading || cancelled.loading
   const error =
     revenue.error || workload.error || income.error || expenses.error || popular.error || cancelled.error
 
+  // расходы с сервера приходят списком целиком, период применяем здесь (даты ISO сравниваются как строки)
+  const shownExpenses = (expenses.data ?? []).filter(
+    (e) => (!from || e.date >= from) && (!to || e.date <= to),
+  )
+
+  const exportExcel = async () => {
+    setExporting(true)
+    setExportError(null)
+    try {
+      await financeApi.exportExcel(params)
+    } catch (e) {
+      setExportError(toApiError(e))
+    } finally {
+      setExporting(false)
+    }
+  }
+
   return (
     <div>
       <h1 className="text-3xl font-serif text-foreground mb-8">Финансы</h1>
+
+      {/* период и выгрузка стоят вне блока загрузки, чтобы не пропадать при смене дат */}
+      <div className="flex flex-wrap items-end gap-4 mb-4">
+        <label className="flex flex-col gap-1 text-sm text-muted-foreground">
+          С даты
+          <input type="date" value={from} max={to || undefined} onChange={(e) => setFrom(e.target.value)} className={dateInput} />
+        </label>
+        <label className="flex flex-col gap-1 text-sm text-muted-foreground">
+          По дату
+          <input type="date" value={to} min={from || undefined} onChange={(e) => setTo(e.target.value)} className={dateInput} />
+        </label>
+        {(from || to) && (
+          <button
+            onClick={() => {
+              setFrom("")
+              setTo("")
+            }}
+            className="px-4 py-2.5 text-sm font-medium text-muted-foreground hover:text-gold-dark transition-colors"
+          >
+            Сбросить период
+          </button>
+        )}
+        <button
+          onClick={exportExcel}
+          disabled={exporting || badRange}
+          className="sm:ml-auto inline-flex items-center gap-2 border-2 border-gold text-gold-dark hover:bg-gold hover:text-white px-6 py-2.5 rounded-full text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <Download className="size-4" />
+          {exporting ? "Формируем…" : "Скачать Excel"}
+        </button>
+      </div>
+      {badRange && <p className="text-sm text-rose-600 mb-4">Дата «по» не может быть раньше даты «с».</p>}
+      {exportError && (
+        <div className="mb-4">
+          <ErrorMessage error={exportError} />
+        </div>
+      )}
+      <div className="mb-4" />
 
       {loading && <p className="text-muted-foreground">Загрузка…</p>}
       {error && <ErrorMessage error={error} onRetry={() => {
@@ -153,7 +222,7 @@ export function FinancePage() {
           {!!workload.data?.length && (
             <>
               <h2 className="text-xl font-serif text-foreground mb-4">Загрузка мастеров</h2>
-              <div className="bg-white rounded-3xl border border-rose-100 overflow-hidden mb-8">
+              <div className={`${tableWrap} mb-8`}>
                 <table className="w-full text-sm">
                   <thead className="bg-rose-50 text-muted-foreground text-left">
                     <tr>
@@ -226,11 +295,11 @@ export function FinancePage() {
 
           {/* таблица расходов */}
           <h2 className="text-xl font-serif text-foreground mb-4">Расходы</h2>
-          {expenses.data?.length === 0 && (
-            <p className="text-muted-foreground">Расходов пока нет.</p>
+          {shownExpenses.length === 0 && (
+            <p className="text-muted-foreground">Расходов за выбранный период нет.</p>
           )}
-          {!!expenses.data?.length && (
-            <div className="bg-white rounded-3xl border border-rose-100 overflow-hidden">
+          {!!shownExpenses.length && (
+            <div className={tableWrap}>
               <table className="w-full text-sm">
                 <thead className="bg-rose-50 text-muted-foreground text-left">
                   <tr>
@@ -241,7 +310,7 @@ export function FinancePage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {expenses.data.map((exp) => (
+                  {shownExpenses.map((exp) => (
                     <tr key={exp.id} className="border-t border-rose-50">
                       <td className="p-4">{exp.date}</td>
                       <td className="p-4">{exp.category}</td>

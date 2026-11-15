@@ -9,7 +9,8 @@ from django.shortcuts import get_object_or_404
 from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAuthenticated
 from catalog.models import Service
-
+from django.http import HttpResponse
+from .exports import build_report_xlsx
 from rest_framework import viewsets
 from rest_framework.decorators import api_view, permission_classes
 
@@ -350,3 +351,13 @@ def cancellations_report(request):
         "by_service": [{**r, "lost_revenue": _money(r["lost_revenue"])} for r in data["by_service"]],
         "by_employee": [{**r, "lost_revenue": _money(r["lost_revenue"])} for r in data["by_employee"]],
     })
+    
+XLSX_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+@api_view(["GET"])
+@permission_classes([IsAdminUser])
+def export_report(request):
+    d_from, d_to = date_range(request.query_params)
+    period = f"{d_from or 'start'}_{d_to or 'now'}" if (d_from or d_to) else "all"
+    response = HttpResponse(build_report_xlsx(d_from, d_to), content_type=XLSX_TYPE)
+    response["Content-Disposition"] = f'attachment; filename="allure-finance-{period}.xlsx"'
+    return response

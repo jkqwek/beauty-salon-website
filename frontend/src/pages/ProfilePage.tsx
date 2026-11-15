@@ -15,8 +15,7 @@ import { ErrorMessage } from "../components/ErrorMessage"
 import { StatusBadge, isActiveStatus } from "../components/StatusBadge"
 import { RescheduleModal, ReviewModal } from "../components/ClientModals"
 import { toast } from "../components/Toast"
-import { Bell, Calendar, Camera, Clock, Gift, RotateCcw, User, type LucideIcon } from "lucide-react"
-
+import { Bell, Calendar, Camera, Clock, Download, Gift, RotateCcw, User, type LucideIcon } from "lucide-react"
 const REVIEW_BADGE: Record<NonNullable<Booking["review_status"]>, { label: string; cls: string }> = {
   new: { label: "Отзыв на модерации", cls: "bg-yellow-50 text-yellow-800 border-yellow-200" },
   published: { label: "Отзыв опубликован", cls: "bg-green-50 text-green-700 border-green-200" },
@@ -48,6 +47,8 @@ export function ProfilePage() {
   const [rescheduling, setRescheduling] = useState<Booking | null>(null)
   const [reviewing, setReviewing] = useState<Booking | null>(null)
   const [cancelling, setCancelling] = useState<Booking | null>(null)
+  const [receiptBusy, setReceiptBusy] = useState<number | null>(null)
+  const [receiptError, setReceiptError] = useState<ApiError | null>(null)
 
   if (!user) {
     return (
@@ -88,6 +89,18 @@ export function ProfilePage() {
       setCancelError(toApiError(e)) // например, поздно по правилу отмены
     } finally {
       setCancelling(null)
+    }
+  }
+
+  const downloadReceipt = async (b: Booking) => {
+    setReceiptBusy(b.id)
+    setReceiptError(null)
+    try {
+      await bookingApi.downloadReceipt(b.id)
+    } catch (e) {
+      setReceiptError(toApiError(e))
+    } finally {
+      setReceiptBusy(null)
     }
   }
 
@@ -220,6 +233,12 @@ export function ProfilePage() {
                   История визитов
                 </h2>
 
+                {receiptError && (
+                  <div className="mb-4">
+                    <ErrorMessage error={receiptError} />
+                  </div>
+                )}
+
                 {bookings.loading && <p className="text-muted-foreground">Загрузка…</p>}
                 {bookings.error && <ErrorMessage error={bookings.error} onRetry={bookings.reload} />}
                 {bookings.data && history.length === 0 && (
@@ -271,6 +290,18 @@ export function ProfilePage() {
                                 <RotateCcw className="size-4" /> Записаться снова
                               </button>
                             )}
+
+                            {visit.status === "completed" && (
+                              <button
+                                onClick={() => downloadReceipt(visit)}
+                                disabled={receiptBusy === visit.id}
+                                className="inline-flex items-center gap-1.5 px-5 py-2 rounded-full border border-rose-200 text-muted-foreground hover:border-gold hover:text-gold-dark text-sm font-medium transition-colors whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
+                              >
+                                <Download className="size-4" />
+                                {receiptBusy === visit.id ? t("Формируем…") : t("Чек (PDF)")}
+                              </button>
+                            )}
+
                             {visit.review_status ? (
                               <span
                                 className={`px-3 py-2 rounded-full border text-xs font-medium whitespace-nowrap ${REVIEW_BADGE[visit.review_status].cls}`}

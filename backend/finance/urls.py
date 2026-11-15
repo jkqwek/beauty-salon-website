@@ -3,7 +3,7 @@ from django.urls import path, include
 from .views import (
     ExpenseViewSet, StockItemViewSet, imcome_summary, revenue_report, employee_workload_report,
     price_calculation, earnings_report, master_payout_report, weekday_revenue_report,
-    popular_services_by_revenue, cancellations_report,
+    popular_services_by_revenue, cancellations_report, export_report,
 )
 
 router = DefaultRouter()
@@ -20,4 +20,5 @@ urlpatterns = [
     path("weekday-revenue/", weekday_revenue_report, name="weekday-revenue"),
     path("popular-services/", popular_services_by_revenue, name="popular-services-by-revenue"),
     path("cancellations/", cancellations_report, name="cancellations-report"),
+    path("export/", export_report, name="export-report")
 ]

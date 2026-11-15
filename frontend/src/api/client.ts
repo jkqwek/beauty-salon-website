@@ -154,3 +154,39 @@ export async function api<T>(
   if (res.status === 204) return undefined as T
   return (await res.json()) as T
 }
+
+export async function downloadFile(path: string, filename: string): Promise<void> {
+  const send = () =>
+    fetch(`${API_URL}${path}`, {
+      headers: tokens.access ? { Authorization: `Bearer ${tokens.access}` } : {},
+    })
+
+  let res: Response
+  try {
+    res = await send()
+    if (res.status === 401 && (tokens.access || tokens.refresh)) {
+      if (!(await refreshAccessToken())) {
+        tokens.clear()
+        window.dispatchEvent(new Event(AUTH_LOST_EVENT))
+      }
+      res = await send()
+    }
+  } catch {
+    throw new ApiError(
+      0,
+      "Нет соединения с сервером. Проверьте интернет и попробуйте ещё раз.",
+      "network_error",
+    )
+  }
+
+  if (!res.ok) throw await parseError(res)
+
+  const url = URL.createObjectURL(await res.blob())
+  const link = document.createElement("a")
+  link.href = url
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
+}

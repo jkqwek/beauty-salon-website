@@ -1,11 +1,12 @@
 from datetime import datetime
 from decimal import Decimal
 
-from django.db.models import Count, DecimalField, Sum
-from django.db.models.functions import Coalesce
+from django.db.models import Count, DecimalField, DurationField, ExpressionWrapper, F, Sum
+from django.db.models.functions import Coalesce, TruncMonth
 from rest_framework.exceptions import ValidationError
 
 from bookings.models import Booking
+from .models import Expense
 
 ZERO = Decimal("0")
 LOST = Coalesce("price", "service__price", output_field=DecimalField(max_digits=12, decimal_places=2))
@@ -98,3 +99,53 @@ def cancellations(d_from=None, d_to=None):
         "by_service": by_service,
         "by_employee": by_employee,
     }
+
+def _hours(delta):
+    return round(delta.total_seconds() / 3600, 1) if delta else 0
+
+def monthly_summary(d_from=None, d_to=None):
+    revenue = {
+        r["month"]: r["total"] or ZERO
+        for r in _in_range(Booking.objects.filter(status="completed"), d_from, d_to)
+        .annotate(month=TruncMonth("date")).values("month").annotate(total=Sum("price"))
+    }
+    
+    expenses = {
+        r["month"]: r["total"] or ZERO
+        for r in _in_range(Expense.objects.all(), d_from, d_to)
+        .annotate(month=TruncMonth("date")).values("month").annotate(total=Sum("amount"))
+    }
+    
+    return [
+        {"month": m, "revenue": revenue.get(m, ZERO), "expenses": expenses.get(m, ZERO)}
+        for m in sorted(set(revenue) | set(expenses))
+    ]
+
+def employee_workload(d_from=None, d_to=None):
+    """Загрузка мастеров: те же цифры, что в отчёте на странице «Финансы»."""
+    rows = (
+        _in_range(Booking.objects.filter(status="completed"), d_from, d_to)
+        .annotate(
+            planned=ExpressionWrapper(F("end_time") - F("start_time"), output_field=DurationField()),
+            actual=ExpressionWrapper(F("actual_end") - F("actual_start"), output_field=DurationField()),
+        )
+        .values("employee_id", "employee__full_name")
+        .annotate(bookings_count=Count("id"), revenue=Sum("price"),
+                  planned_total=Sum("planned"), actual_total=Sum("actual"))
+    )
+    items = [
+        {
+            "employee_id": r["employee_id"],
+            "employee_name": r["employee__full_name"],
+            "bookings_count": r["bookings_count"],
+            "planned_hours": _hours(r["planned_total"]),
+            "actual_hours": _hours(r["actual_total"]),
+            "revenue": r["revenue"] or ZERO,
+        }
+        for r in rows
+    ]
+    items.sort(key=lambda i: i["employee_name"])
+    return items
+
+def expenses_between(d_from=None, d_to=None):
+    return list(_in_range(Expense.objects.all(), d_from, d_to).order_by("date", "id"))

@@ -17,6 +17,7 @@ from .views import (
     upcoming_closures,
     top_services,
     promo_check,
+    booking_receipt,
 )
 
 urlpatterns = [
@@ -37,4 +38,5 @@ urlpatterns = [
     path("guest/", create_guest_booking, name="create-guest-booking"),
     path("top-services/", top_services, name="top-services"),
     path("promo/", promo_check, name="promo-check"),
+    path("<int:booking_id>/receipt/", booking_receipt, name="booking-receipt"),
 ]

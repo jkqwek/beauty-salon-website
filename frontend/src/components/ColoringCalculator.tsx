@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from "react"
 import { Clock } from "lucide-react"
+import { Tooltip } from "./Tooltip"
 import { formatDuration, formatPrice } from "@/lib/format"
 import { t } from "@/lib/i18n"
 import {
@@ -26,7 +27,7 @@ interface ChoiceProps {
 
 function Choice({ type, name, checked, title, hint, disabled, onChange }: ChoiceProps) {
   return (
-    <label className={`relative block ${disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}>
+    <label title={hint || title} className={`relative block ${disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}>
       <input type={type} name={name} checked={checked} disabled={disabled} onChange={onChange} className="peer sr-only" />
       <span className="block h-full rounded-2xl border-2 border-rose-100 bg-white px-4 py-3 text-sm transition-colors hover:border-gold/40 peer-checked:border-gold peer-checked:bg-gold/5 peer-focus-visible:ring-2 peer-focus-visible:ring-gold/50">
         <span className="block font-medium text-foreground">{title}</span>
@@ -36,10 +37,10 @@ function Choice({ type, name, checked, title, hint, disabled, onChange }: Choice
   )
 }
 
-function Group({ legend, className, children }: { legend: string; className: string; children: ReactNode }) {
+function Group({ legend, description, className, children }: { legend: string; description: string; className: string; children: ReactNode }) {
   return (
     <fieldset>
-      <legend className="mb-3 text-sm font-medium text-foreground">{legend}</legend>
+      <legend className="mb-3 flex items-center gap-2 text-sm font-medium text-foreground">{legend}<Tooltip content={description} /></legend>
       <div className={`grid gap-3 ${className}`}>{children}</div>
     </fieldset>
   )
@@ -74,7 +75,7 @@ export function ColoringCalculator({ onBook }: { onBook: () => void }) {
 
       <div className="grid gap-8 lg:grid-cols-[1fr_20rem]">
         <div className="space-y-8">
-          <Group legend={t("Техника окрашивания")} className="sm:grid-cols-2">
+          <Group legend={t("Техника окрашивания")} description={t("От выбранной техники зависят этапы работы, расход материалов, итоговая цена и длительность процедуры.")} className="sm:grid-cols-2">
             {(Object.keys(TECHNIQUES) as TechniqueId[]).map((id) => (
               <Choice
                 key={id}
@@ -88,7 +89,7 @@ export function ColoringCalculator({ onBook }: { onBook: () => void }) {
             ))}
           </Group>
 
-          <Group legend={t("Длина волос")} className="grid-cols-2 xl:grid-cols-4">
+          <Group legend={t("Длина волос")} description={t("Выберите длину от корней до кончиков: чем длиннее волосы, тем больше материалов и времени может потребоваться.")} className="grid-cols-2 xl:grid-cols-4">
             {(Object.keys(LENGTHS) as LengthId[]).map((id) => (
               <Choice
                 key={id}
@@ -102,7 +103,7 @@ export function ColoringCalculator({ onBook }: { onBook: () => void }) {
             ))}
           </Group>
 
-          <Group legend={t("Густота волос")} className="grid-cols-3">
+          <Group legend={t("Густота волос")} description={t("Густота влияет на количество используемого состава и расчетную стоимость окрашивания.")} className="grid-cols-3">
             {(Object.keys(DENSITIES) as DensityId[]).map((id) => (
               <Choice
                 key={id}
@@ -115,7 +116,7 @@ export function ColoringCalculator({ onBook }: { onBook: () => void }) {
             ))}
           </Group>
 
-          <Group legend={t("Дополнительно")} className="sm:grid-cols-2">
+          <Group legend={t("Дополнительно")} description={t("Отметьте дополнительные процедуры. Некоторые этапы уже включены в выбранную технику и не требуют повторного выбора.")} className="sm:grid-cols-2">
             {(Object.keys(OPTIONS) as OptionId[]).map((id) => {
               const included = id === "lightening" && lighteningIncluded
               return (

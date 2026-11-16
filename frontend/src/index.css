@@ -103,3 +103,77 @@ h6,
     @apply text-base md:text-lg text-muted-foreground leading-relaxed max-w-xl text-pretty;
   }
 }
+
+/* Верхний индикатор загрузки: показывается при первой загрузке и переходах */
+.page-loading-track {
+  position: fixed;
+  inset: 0 0 auto;
+  z-index: 1000;
+  height: 3px;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 180ms ease;
+}
+.page-loading-track.is-loading {
+  opacity: 1;
+}
+.page-loading-track span {
+  display: block;
+  width: 38%;
+  height: 100%;
+  background: linear-gradient(90deg, #d4af37, #f1d77b, #d4af37);
+  box-shadow: 0 0 10px rgb(212 175 55 / 35%);
+  transform: translateX(-110%);
+}
+.page-loading-track.is-loading span {
+  animation: page-loading-progress 1.15s ease-in-out infinite;
+}
+@keyframes page-loading-progress {
+  0% { transform: translateX(-110%); }
+  55% { transform: translateX(155%); }
+  100% { transform: translateX(290%); }
+}
+
+/* Подсказки для терминов и сложных настроек */
+.help-tooltip {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  cursor: help;
+  outline-offset: 4px;
+}
+.help-tooltip::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  z-index: 80;
+  left: 50%;
+  bottom: calc(100% + 9px);
+  width: max-content;
+  max-width: min(280px, 80vw);
+  padding: 9px 12px;
+  border: 1px solid var(--color-rose-200);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--color-foreground);
+  box-shadow: 0 8px 24px rgb(34 34 34 / 12%);
+  font: 400 12px/1.5 var(--font-sans);
+  white-space: normal;
+  text-align: left;
+  opacity: 0;
+  visibility: hidden;
+  transform: translate(-50%, 4px);
+  transition: opacity 140ms ease, transform 140ms ease, visibility 140ms;
+  pointer-events: none;
+}
+.help-tooltip:hover::after,
+.help-tooltip:focus-visible::after {
+  opacity: 1;
+  visibility: visible;
+  transform: translate(-50%, 0);
+}
+@media (prefers-reduced-motion: reduce) {
+  .page-loading-track,
+  .help-tooltip::after { transition: none; }
+  .page-loading-track.is-loading span { animation-duration: 2.5s; }
+}

@@ -4,9 +4,10 @@ import {
   createBrowserRouter,
   Outlet,
   NavLink,
+  useNavigation,
 } from "react-router"
 import { Sparkles, Calendar, Menu, X, LogOut, Globe, Search } from "lucide-react"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { HomePage } from "./pages/HomePage"
 import { MastersPage } from "./pages/MastersPage"
 import { ServicesPage } from "./pages/ServicesPage"
@@ -66,6 +67,7 @@ function Layout() {
 
   return (
     <div className="min-h-screen flex flex-col relative overflow-x-clip bg-pearl text-foreground selection:bg-gold/20 selection:text-gold">
+      <LoadingIndicator />
       <ScrollToHash /> 
 
       {/* Header */}
@@ -294,6 +296,34 @@ export default function App() {
         <RouterProvider router={router} />
       </LanguageProvider>
     </AuthProvider>
+  )
+}
+
+
+function LoadingIndicator() {
+  const navigation = useNavigation()
+  const [documentLoading, setDocumentLoading] = useState(
+    typeof document !== "undefined" && document.readyState !== "complete",
+  )
+
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    const finish = () => setDocumentLoading(false)
+    window.addEventListener("load", finish, { once: true })
+    return () => window.removeEventListener("load", finish)
+  })
+
+  const isLoading = documentLoading || navigation.state !== "idle"
+  return (
+    <div
+      className={`page-loading-track ${isLoading ? "is-loading" : ""}`}
+      role="progressbar"
+      aria-label={t("Загрузка страницы")}
+      aria-valuetext={isLoading ? t("Страница загружается") : t("Загрузка завершена")}
+      aria-hidden={!isLoading}
+    >
+      <span />
+    </div>
   )
 }
 

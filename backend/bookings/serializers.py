@@ -1,17 +1,21 @@
 import re
 from datetime import datetime, timedelta
+from decimal import Decimal
 
+from django.db import transaction
+from django.db.models import F
 from django.utils import timezone
 from rest_framework import serializers
 
 from catalog.models import Employee, Service, price_on
 from config.images import RelativeImageField
 from .models import (
-    ACTIVE_STATUSES, BonusOperation, Booking, CancellationPolicy, Review, SalonClosure, Schedule, TimeOff,
+    ACTIVE_STATUSES, GIFT_MAX_AMOUNT, GIFT_MIN_AMOUNT, BonusOperation, Booking, CancellationPolicy, GiftCertificate,
+    Review, SalonClosure, Schedule, TimeOff,
 )
 from .services import (
     MAX_DAYS_AHEAD, apply_promo, client_busy, closure_conflicts, conflict_label, find_promo, get_free_slots,
-    slot_taken, guest_busy
+    slot_taken, guest_busy, find_gift
 )
 
 BLOCKED_MESSAGE = "Онлайн-запись недоступна. Свяжитесь с салоном."
@@ -76,15 +80,21 @@ class BookingSerializer(serializers.ModelSerializer):
     service_name = serializers.CharField(source="service.name", read_only=True)
     employee_name = serializers.CharField(source="employee.full_name", read_only=True)
     review_status = serializers.CharField(source="review.status", read_only=True)  # null — отзыва нет
+    to_pay = serializers.SerializerMethodField()  # сколько остаётся оплатить в салоне после сертификата
 
     class Meta:
         model = Booking
         fields = '__all__'
-        read_only_fields = ("client", "end_time", "status", "created_at", "promo_code")
+        read_only_fields = ("client", "end_time", "status", "created_at", "promo_code",
+                            "gift_certificate", "gift_amount", "gift_refunded")
+
+    def get_to_pay(self, booking):
+        return None if booking.price is None else str(booking.price - booking.gift_amount)
 
 
 class BookingCreateSerializer(BaseBookingCreateSerializer):
     promo_code = serializers.CharField(required=False, allow_blank=True, max_length=30)
+    gift_code = serializers.CharField(required=False, allow_blank=True, max_length=20)  # подарочный сертификат
 
     def validate(self, attrs):
         user = self.context["request"].user
@@ -105,6 +115,11 @@ class BookingCreateSerializer(BaseBookingCreateSerializer):
         if error:
             raise serializers.ValidationError({"promo_code": error})
         attrs["promo"] = promo
+
+        gift, error = find_gift(attrs.pop("gift_code", ""))
+        if error:
+            raise serializers.ValidationError({"gift_code": error})
+        attrs["gift"] = gift
         return attrs
 
     def create(self, validated_data):
@@ -112,11 +127,34 @@ class BookingCreateSerializer(BaseBookingCreateSerializer):
         promo = validated_data.get("promo")
         if promo:
             fields["price"] = apply_promo(fields["price"], promo)
-        return Booking.objects.create(
-            client=self.context["request"].user,
-            promo_code=promo,
-            **fields,
-        )
+        gift = validated_data.get("gift")
+        gift_amount = min(gift.balance, fields["price"]) if gift else Decimal("0")
+        with transaction.atomic():
+            if gift and not GiftCertificate.objects.filter(pk=gift.pk, balance__gte=gift_amount).update(
+                    balance=F("balance") - gift_amount):  # списание атомарное: остаток не потратить дважды
+                raise serializers.ValidationError({"gift_code": "На сертификате недостаточно средств."})
+            return Booking.objects.create(
+                client=self.context["request"].user,
+                promo_code=promo,
+                gift_certificate=gift,
+                gift_amount=gift_amount,
+                **fields,
+            )
+
+
+class GiftCertificateSerializer(serializers.ModelSerializer):
+    status = serializers.CharField(read_only=True)  # pending / active / used / expired
+
+    class Meta:
+        model = GiftCertificate
+        fields = ("id", "code", "amount", "balance", "recipient_name", "message", "is_paid", "valid_until",
+                  "created_at", "status")
+        read_only_fields = ("code", "balance", "is_paid", "valid_until", "created_at")
+
+    def validate_amount(self, value):
+        if not GIFT_MIN_AMOUNT <= value <= GIFT_MAX_AMOUNT:
+            raise serializers.ValidationError(f"Сумма сертификата — от {GIFT_MIN_AMOUNT} до {GIFT_MAX_AMOUNT} ₽.")
+        return value
 
 class AdminBookingSerializer(BookingSerializer):
     """Запись в панели: видно клиента и его метки, менять можно только статус."""

@@ -1,5 +1,9 @@
+import secrets
+from datetime import timedelta
+
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
+from django.utils import timezone
 from catalog.models import Employee, Service
 from django.contrib.auth import get_user_model
 
@@ -65,6 +69,11 @@ class Booking(models.Model):
     comment = models.CharField("Комментарий клиента", max_length=500, blank=True)
     promo_code = models.ForeignKey("PromoCode", on_delete=models.SET_NULL, null=True, blank=True,
                                    related_name="bookings", verbose_name="Промокод")
+    # подарочный сертификат: сколько цены покрыто с его остатка (при отмене записи сумма возвращается)
+    gift_certificate = models.ForeignKey("GiftCertificate", on_delete=models.SET_NULL, null=True, blank=True,
+                                         related_name="bookings", verbose_name="Сертификат")
+    gift_amount = models.DecimalField("Оплачено сертификатом", max_digits=10, decimal_places=2, default=0)
+    gift_refunded = models.BooleanField("Сертификат возвращён", default=False)
 
     class Meta:
         verbose_name = "Запись"
@@ -243,3 +252,64 @@ class Referral(models.Model):
 
     def __str__(self):
         return f"{self.referrer} → {self.friend}"
+
+
+GIFT_MIN_AMOUNT = 500
+GIFT_MAX_AMOUNT = 50000
+GIFT_VALID_DAYS = 365
+GIFT_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # без похожих символов (0/O, 1/I)
+
+
+def new_gift_code():
+    while True:
+        raw = "".join(secrets.choice(GIFT_ALPHABET) for _ in range(8))
+        code = f"GIFT-{raw[:4]}-{raw[4:]}"
+        if not GiftCertificate.objects.filter(code=code).exists():
+            return code
+
+
+class GiftCertificate(models.Model):
+    """Подарочный сертификат: заказывается на сайте, оплачивается в салоне, затем списывается при записи по коду."""
+    code = models.CharField("Код", max_length=20, unique=True, blank=True)
+    buyer = models.ForeignKey(User, on_delete=models.CASCADE, related_name="gift_certificates",
+                              verbose_name="Покупатель")
+    amount = models.DecimalField("Номинал", max_digits=8, decimal_places=2)
+    balance = models.DecimalField("Остаток", max_digits=8, decimal_places=2, blank=True)
+    recipient_name = models.CharField("Кому", max_length=100, blank=True)
+    message = models.CharField("Поздравление", max_length=300, blank=True)
+    is_paid = models.BooleanField("Оплачен в салоне", default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    valid_until = models.DateField("Действует до", blank=True)
+
+    class Meta:
+        verbose_name = "Подарочный сертификат"
+        verbose_name_plural = "Подарочные сертификаты"
+        ordering = ["-created_at"]
+
+    def save(self, *args, **kwargs):
+        if not self.code:
+            self.code = new_gift_code()
+        if self.balance is None:
+            self.balance = self.amount
+        if not self.valid_until:
+            self.valid_until = timezone.localdate() + timedelta(days=GIFT_VALID_DAYS)
+        super().save(*args, **kwargs)
+
+    def activate(self):
+        """Оплата получена в салоне: сертификат начинает действовать, срок отсчитывается от этого дня."""
+        self.is_paid = True
+        self.valid_until = timezone.localdate() + timedelta(days=GIFT_VALID_DAYS)
+        self.save(update_fields=["is_paid", "valid_until"])
+
+    @property
+    def status(self):
+        if not self.is_paid:
+            return "pending"  # ждёт оплаты в салоне
+        if self.valid_until < timezone.localdate():
+            return "expired"
+        if self.balance <= 0:
+            return "used"
+        return "active"
+
+    def __str__(self):
+        return f"{self.code} ({self.balance} ₽)"

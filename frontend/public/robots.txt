@@ -1,0 +1,9 @@
+User-agent: *
+Allow: /
+Disallow: /panel
+Disallow: /profile
+Disallow: /api/
+Disallow: /admin/
+
+# Замените адрес на домен вашего сайта
+Sitemap: https://example.com/sitemap.xml

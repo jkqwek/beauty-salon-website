@@ -5,14 +5,15 @@ import {
   authApi,
   bookingApi,
   catalogApi,
+  giftApi,
   type Employee,
   type GuestBookingResult,
   type Service,
 } from "@/api/api"
-import { toApiError, type ApiError } from "@/api/client"
+import { errorText, toApiError, type ApiError } from "@/api/client"
 import { useApi } from "@/api/useApi"
 import { useAuth } from "@/auth/AuthContext"
-import { formatDate, formatDuration, maskPhone } from "@/lib/format"
+import { formatDate, formatDuration, formatPrice, maskPhone } from "@/lib/format"
 import { validators } from "@/lib/validators"
 import { masterPhoto } from "@/lib/photos"
 import { Avatar } from "./Avatar"
@@ -61,6 +62,26 @@ export function BookingWizard({ onClose, onBooked, onLogin, prefill }: BookingWi
   const [phone, setPhone] = useState(() => maskPhone(user?.phone ?? ""))
   const phoneError = phone ? validators.phone(phone) : t("Укажите телефон, чтобы салон мог с вами связаться")
   const canSubmit = !phoneError && (!isGuest || guestName.trim().length >= 2)
+
+  // подарочный сертификат: только для вошедших, код вводится при подтверждении
+  const [giftCode, setGiftCode] = useState("")
+  const [giftInfo, setGiftInfo] = useState<string | null>(null)
+  const [giftError, setGiftError] = useState<string | null>(null)
+  const [giftChecking, setGiftChecking] = useState(false)
+
+  const checkGift = async () => {
+    setGiftChecking(true)
+    setGiftInfo(null)
+    setGiftError(null)
+    try {
+      const gift = await giftApi.check(giftCode.trim())
+      setGiftInfo(t("Остаток на сертификате: {sum}. Спишется при записи.", { sum: formatPrice(gift.balance) }))
+    } catch (e) {
+      setGiftError(errorText(toApiError(e)))
+    } finally {
+      setGiftChecking(false)
+    }
+  }
 
   const services = useApi(catalogApi.services)
   const employees = useApi(
@@ -145,6 +166,7 @@ export function BookingWizard({ onClose, onBooked, onLogin, prefill }: BookingWi
     setSubmitError(null)
     try {
       const payload = { employee: employeeId, service: service.id, date, start_time: time }
+      const gift_code = giftCode.trim()
       if (isGuest) {
         const booked = await bookingApi.createGuest({
           ...payload,
@@ -154,7 +176,7 @@ export function BookingWizard({ onClose, onBooked, onLogin, prefill }: BookingWi
         onBooked(booked, { guest: true })
       } else {
         if (digits(phone) !== digits(user?.phone)) updateUser(await authApi.updateMe({ phone }))
-        const booked = await bookingApi.create(payload)
+        const booked = await bookingApi.create(gift_code ? { ...payload, gift_code } : payload)
         onBooked(booked, { guest: false })
       }
     } catch (e) {
@@ -435,6 +457,38 @@ export function BookingWizard({ onClose, onBooked, onLogin, prefill }: BookingWi
                         : t("Сохраним в профиле — по нему салон подтвердит запись"))}
                   </p>
                 </div>
+
+                {!isGuest && (
+                  <div className="space-y-1.5">
+                    <label htmlFor="booking-gift" className="text-muted-foreground">
+                      {t("Подарочный сертификат")}
+                    </label>
+                    <div className="flex gap-2">
+                      <input
+                        id="booking-gift"
+                        value={giftCode}
+                        onChange={(e) => {
+                          setGiftCode(e.target.value.toUpperCase())
+                          setGiftInfo(null)
+                          setGiftError(null)
+                        }}
+                        placeholder="GIFT-XXXX-XXXX"
+                        maxLength={20}
+                        className="min-w-0 flex-1 px-4 py-3 rounded-xl border border-rose-200 bg-white focus:outline-none focus:border-gold focus:ring-1 focus:ring-gold transition-shadow"
+                      />
+                      <button
+                        type="button"
+                        onClick={checkGift}
+                        disabled={!giftCode.trim() || giftChecking}
+                        className="px-4 py-3 rounded-xl border border-gold/50 text-gold-dark hover:bg-rose-50 disabled:opacity-50 transition-colors"
+                      >
+                        {t("Применить")}
+                      </button>
+                    </div>
+                    {giftInfo && <p className="text-xs text-muted-foreground">{giftInfo}</p>}
+                    {giftError && <p className="text-xs text-rose-600">{giftError}</p>}
+                  </div>
+                )}
               </div>
 
               {isGuest && (

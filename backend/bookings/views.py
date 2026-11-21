@@ -12,12 +12,12 @@ from rest_framework import mixins, serializers, status, viewsets
 from catalog.models import Employee, Service, price_on
 from config.images import prepare_image
 from .models import (
-    ACTIVE_STATUSES, MAX_REVIEW_PHOTOS, CancellationPolicy, Review, ReviewPhoto, SalonClosure, Schedule, Booking,
+    ACTIVE_STATUSES, MAX_REVIEW_PHOTOS, CancellationPolicy, GiftCertificate, Review, ReviewPhoto, SalonClosure, Schedule, Booking,
     TimeOff, User,
 )
 from .serializers import (
     AdminBookingSerializer, AdminReviewSerializer, BookingCreateSerializer, BookingSerializer,
-    CancellationPolicySerializer, PublicReviewSerializer, ReviewCreateSerializer, SalonClosureSerializer,
+    CancellationPolicySerializer, GiftCertificateSerializer, PublicReviewSerializer, ReviewCreateSerializer, SalonClosureSerializer,
     ScheduleSerializer, TimeOffSerializer, GuestBookingCreateSerializer
 )
 
@@ -25,7 +25,7 @@ from .throttles import GuestBookingThrottle, PublicSlotsThrottle
 
 from .services import (
     MAX_DAYS_AHEAD, available_days, cancel_deadline_error, closure_conflicts, closures_between, conflict_label,
-    apply_promo, find_promo, get_free_slots, recalc_master_rating, reschedule,
+    apply_promo, find_gift, find_promo, get_free_slots, recalc_master_rating, reschedule,
 )
 from django.db.models import Avg, Count, F, Q, Sum
 from django.shortcuts import get_object_or_404
@@ -133,6 +133,29 @@ def price_view(request):
         "discount_percent": promo.discount_percent if promo else 0,
         "promotion": promo.name if promo else None,
     })
+
+
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated])
+def gift_certificates(request):
+    """GET — мои сертификаты. POST — заказать новый: он заработает после оплаты в салоне."""
+    if request.method == "POST":
+        serializer = GiftCertificateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save(buyer=request.user)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+    gifts = GiftCertificate.objects.filter(buyer=request.user)
+    return Response(GiftCertificateSerializer(gifts, many=True).data)
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def gift_check(request):
+    """Проверка кода сертификата перед записью: ?code= — вернёт остаток и срок."""
+    gift, error = find_gift(request.query_params.get("code"))
+    if not gift:
+        raise ValidationError({"code": error or "Введите код сертификата."})
+    return Response({"code": gift.code, "balance": str(gift.balance), "valid_until": gift.valid_until})
 
 
 @api_view(["GET"])

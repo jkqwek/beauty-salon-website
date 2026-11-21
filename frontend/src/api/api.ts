@@ -104,6 +104,8 @@ export interface Booking {
   price: string | null
   rating: number | null
   review_status: ReviewStatus | null
+  gift_amount?: string // сколько цены оплачено подарочным сертификатом
+  to_pay?: string | null // сколько осталось оплатить в салоне
 }
 
 export type ReviewStatus = "new" | "published" | "rejected"
@@ -214,7 +216,7 @@ export const bookingApi = {
     return api<Booking>(`/bookings/${id}/review/`, { method: "POST", body: form })
   },
   upcomingClosures: () => api<Closure[]>("/bookings/closures/upcoming/"),
-  create: (data: { employee: number; service: number; date: string; start_time: string }) =>
+  create: (data: { employee: number; service: number; date: string; start_time: string; gift_code?: string }) =>
     api<Booking>("/bookings/", { method: "POST", body: data }),
   createGuest: (data: { employee: number; service: number; date: string; start_time: string; guest_name: string; guest_phone: string }) =>
     api<GuestBookingResult>("/bookings/guest/", { method: "POST", body: data, auth: false }),
@@ -516,4 +518,25 @@ export const promotionsApi = {
 export const supportApi = {
   sendBugReport: (data: { text: string; contact?: string }) =>
     api<{ id: number }>("/support/", { method: "POST", body: data, auth: false }),
+}
+
+export interface GiftCertificate {
+  id: number
+  code: string
+  amount: string
+  balance: string
+  recipient_name: string
+  message: string
+  is_paid: boolean
+  valid_until: string
+  created_at: string
+  status: "pending" | "active" | "used" | "expired"
+}
+
+export const giftApi = {
+  my: () => api<GiftCertificate[]>("/bookings/gift-certificates/"),
+  order: (data: { amount: number; recipient_name: string; message: string }) =>
+    api<GiftCertificate>("/bookings/gift-certificates/", { method: "POST", body: data }),
+  check: (code: string) =>
+    api<{ code: string; balance: string; valid_until: string }>(`/bookings/gift-certificates/check/?${query({ code })}`),
 }

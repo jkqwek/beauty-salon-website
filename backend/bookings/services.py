@@ -2,13 +2,13 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 
-from django.db.models import Avg, Q, Sum
+from django.db.models import Avg, F, Q, Sum
 from django.utils import timezone
 
 from catalog.models import price_on
 from .models import (
     ACTIVE_STATUSES, BONUS_PERCENT, REFERRAL_BONUS, REVIEW_BONUS, BonusOperation, Booking, CancellationPolicy,
-    PromoCode, Referral, SalonClosure, Schedule, TimeOff, User,
+    GiftCertificate, PromoCode, Referral, SalonClosure, Schedule, TimeOff, User,
 )
 
 SLOT_STEP = timedelta(minutes=15)
@@ -136,6 +136,10 @@ def reschedule(booking, day, start_time):
     booking.price, _ = price_on(booking.service, day)
     if booking.promo_code_id:  # скидка по промокоду сохраняется при переносе
         booking.price = apply_promo(booking.price, booking.promo_code)
+    if booking.gift_amount > booking.price:  # цена после переноса ниже — излишек возвращается на сертификат
+        GiftCertificate.objects.filter(pk=booking.gift_certificate_id).update(
+            balance=F("balance") + booking.gift_amount - booking.price)
+        booking.gift_amount = booking.price
     booking.save()
     return None
 
@@ -280,3 +284,31 @@ def reward_referral(booking):
 def guest_busy(phone, day, start, end):
     """Есть ли у гостя с этим телефоном другая активная запись, пересекающаяся с интервалом."""
     return (Booking.objects.filter(client__isnull=True, guest_phone=phone, date=day, start_time__lt=end, end_time__gt=start, status__in=ACTIVE_STATUSES).exists())
+
+
+# ---------- подарочные сертификаты ----------
+
+def find_gift(code):
+    """Действующий сертификат по коду: (сертификат, None) или (None, текст ошибки). Пустой код — (None, None)."""
+    code = (code or "").strip().upper()
+    if not code:
+        return None, None
+    gift = GiftCertificate.objects.filter(code=code).first()
+    if not gift or not gift.is_paid:
+        return None, "Сертификат не найден или ещё не оплачен в салоне."
+    if gift.valid_until < timezone.localdate():
+        return None, "Срок действия сертификата истёк."
+    if gift.balance <= 0:
+        return None, "Сертификат уже использован."
+    return gift, None
+
+
+def refund_gift(booking):
+    """Отменённая запись возвращает на сертификат сумму, которую он покрыл — один раз."""
+    if booking.status != "cancelled" or not booking.gift_certificate_id or not booking.gift_amount \
+            or booking.gift_refunded:
+        return
+    if Booking.objects.filter(pk=booking.pk, gift_refunded=False).update(gift_refunded=True):
+        booking.gift_refunded = True
+        GiftCertificate.objects.filter(pk=booking.gift_certificate_id).update(
+            balance=F("balance") + booking.gift_amount)

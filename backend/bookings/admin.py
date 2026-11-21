@@ -3,7 +3,7 @@ from django.contrib import admin
 from django.http import HttpResponse
 from .models import Schedule, Booking
 from .models import (
-    BonusOperation, CancellationPolicy, PromoCode, Referral, Review, ReviewPhoto, SalonClosure, TimeOff,
+    BonusOperation, CancellationPolicy, GiftCertificate, PromoCode, Referral, Review, ReviewPhoto, SalonClosure, TimeOff,
 )
 
 @admin.register(TimeOff)
@@ -88,3 +88,20 @@ class PromoCodeAdmin(admin.ModelAdmin):
 class ReferralAdmin(admin.ModelAdmin):
     list_display = ("referrer", "friend", "rewarded", "created_at")
     raw_id_fields = ("referrer", "friend")
+
+
+@admin.register(GiftCertificate)
+class GiftCertificateAdmin(admin.ModelAdmin):
+    list_display = ("code", "buyer", "recipient_name", "amount", "balance", "is_paid", "valid_until", "created_at")
+    list_filter = ("is_paid",)
+    search_fields = ("code", "buyer__username", "recipient_name")
+    readonly_fields = ("code", "created_at")
+    actions = ["mark_paid"]
+
+    @admin.action(description="Оплата получена в салоне — активировать сертификаты")
+    def mark_paid(self, request, queryset):
+        count = 0
+        for gift in queryset.filter(is_paid=False):
+            gift.activate()
+            count += 1
+        self.message_user(request, f"Активировано сертификатов: {count}")

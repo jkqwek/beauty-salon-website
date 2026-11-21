@@ -24,6 +24,7 @@ import { BackToTopButton } from "./components/BackToTopButton"
 import { Avatar } from "./components/Avatar"
 import { VacanciesPage } from "./pages/VacanciesPage"
 import { PartnersPage } from "./pages/PartnersPage"
+import { GiftPage } from "./pages/GiftPage"
 import { CompareBar } from "./components/CompareBar"
 import { ConfirmDialog } from "./components/ConfirmDialog"
 import { SiteSearch } from "./components/SiteSearch"
@@ -176,6 +177,7 @@ function Layout() {
             <NavLink to="/about" className="hover:text-gold transition-colors">{t("О нас")}</NavLink>
             <NavLink to="/vacancies" className="hover:text-gold transition-colors">{t("Вакансии")}</NavLink>
             <NavLink to="/partners" className="hover:text-gold transition-colors">{t("Партнёрам")}</NavLink>
+            <NavLink to="/gift" className="hover:text-gold transition-colors">{t("Сертификаты")}</NavLink>
             <NavLink to="/#location" className="hover:text-gold transition-colors">{t("Как добраться")}</NavLink>
 
             <div className="flex gap-x-4 items-center">
@@ -285,6 +287,7 @@ const router = createBrowserRouter([
       { path: "panel", Component: PanelLayout, children: panelRoutes },
       { path: "vacancies", Component: VacanciesPage },
       { path: "partners", Component: PartnersPage },
+      { path: "gift", Component: GiftPage },
     ],
   },
 ])

@@ -3,7 +3,7 @@ from django.db.models.signals import post_save
 from django.dispatch import receiver
 
 from .models import Booking, Review
-from .services import reward_referral, sync_review_bonus, sync_visit_bonus
+from .services import refund_gift, reward_referral, sync_review_bonus, sync_visit_bonus
 from telegram_bot.notify import notify_admin_new_appointment, notify_master_new_booking
 
 
@@ -12,6 +12,7 @@ def update_visit_bonus(sender, instance, **kwargs):
     """Баллы за визит при любом сохранении записи: панель, Django-админка, кабинет мастера, бот."""
     sync_visit_bonus(instance)
     reward_referral(instance)
+    refund_gift(instance)  # отмена записи возвращает деньги на сертификат
 
 
 @receiver(post_save, sender=Review)

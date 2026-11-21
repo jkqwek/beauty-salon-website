@@ -87,6 +87,9 @@ def build_receipt_pdf(booking) -> bytes:
     promo = getattr(booking, "promo_code", None)
     if promo:
         rows.append(("Промокод", promo.code))
+    if booking.gift_amount:  # часть цены оплачена подарочным сертификатом
+        rows.append(("Сертификат", f"−{money(booking.gift_amount)}"))
+        price = price - booking.gift_amount
 
     details = Table(
         [[Paragraph(name, label), Paragraph(text, value)] for name, text in rows],
